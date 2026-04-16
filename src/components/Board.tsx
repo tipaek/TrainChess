@@ -8,8 +8,10 @@ import type { Color } from '@/lib/types';
 export interface BoardOverlay {
   lastMove?: { from: string; to: string };
   badMove?: { from: string; to: string };
-  hintSquare?: string;
-  bestArrow?: { from: string; to: string };
+  hintSquares?: string[];
+  opponentArrow?: { from: string; to: string };
+  selected?: string;
+  legalDests?: { square: string; capture: boolean }[];
 }
 
 interface BoardProps {
@@ -18,57 +20,73 @@ interface BoardProps {
   disabled: boolean;
   overlay: BoardOverlay;
   onDrop: (from: string, to: string) => boolean;
+  onSquareClick: (square: string) => void;
+  boardWidth?: number;
 }
 
-const COLORS = {
-  lastMove: 'rgba(155, 199, 0, 0.35)',
-  bad: 'rgba(220, 38, 38, 0.55)',
-  hint: 'rgba(59, 130, 246, 0.55)',
-  bestFrom: 'rgba(16, 185, 129, 0.45)',
-  bestTo: 'rgba(16, 185, 129, 0.35)',
-};
+const LAST_MOVE_BG = 'rgba(155, 199, 0, 0.30)';
+const BAD_BG = 'rgba(220, 38, 38, 0.55)';
+const HINT_RING = 'inset 0 0 0 4px rgba(59, 130, 246, 0.9)';
+const HINT_BG = 'rgba(59, 130, 246, 0.25)';
+const SELECTED_BG = 'rgba(255, 230, 130, 0.45)';
+const OPP_ARROW_COLOR = '#f97316';
+const LEGAL_DOT =
+  'radial-gradient(circle, rgba(0,0,0,0.28) 20%, rgba(0,0,0,0) 22%)';
+const LEGAL_CAPTURE =
+  'radial-gradient(circle, transparent 0%, transparent 68%, rgba(0,0,0,0.35) 69%, rgba(0,0,0,0.35) 100%)';
 
-function mergeStyle(
-  map: Record<string, CSSProperties>,
-  square: string | undefined,
-  style: CSSProperties,
-) {
-  if (!square) return;
-  map[square] = { ...(map[square] ?? {}), ...style };
+function addStyle(map: Record<string, CSSProperties>, sq: string | undefined, s: CSSProperties) {
+  if (!sq) return;
+  map[sq] = { ...(map[sq] ?? {}), ...s };
 }
 
-export function Board({ fen, userColor, disabled, overlay, onDrop }: BoardProps) {
+function mergeBackground(existing: CSSProperties | undefined, layer: string): CSSProperties {
+  const prev = (existing?.background as string | undefined) ?? '';
+  return { ...(existing ?? {}), background: prev ? `${layer}, ${prev}` : layer };
+}
+
+export function Board({
+  fen,
+  userColor,
+  disabled,
+  overlay,
+  onDrop,
+  onSquareClick,
+  boardWidth,
+}: BoardProps) {
   const styles: Record<string, CSSProperties> = {};
 
   if (overlay.lastMove) {
-    mergeStyle(styles, overlay.lastMove.from, { background: COLORS.lastMove });
-    mergeStyle(styles, overlay.lastMove.to, { background: COLORS.lastMove });
+    addStyle(styles, overlay.lastMove.from, { background: LAST_MOVE_BG });
+    addStyle(styles, overlay.lastMove.to, { background: LAST_MOVE_BG });
   }
-  if (overlay.bestArrow) {
-    mergeStyle(styles, overlay.bestArrow.from, {
-      background: COLORS.bestFrom,
-      boxShadow: 'inset 0 0 0 3px rgba(16, 185, 129, 0.9)',
-    });
-    mergeStyle(styles, overlay.bestArrow.to, { background: COLORS.bestTo });
+  if (overlay.selected) {
+    addStyle(styles, overlay.selected, { background: SELECTED_BG });
+  }
+  if (overlay.legalDests) {
+    for (const d of overlay.legalDests) {
+      const layer = d.capture ? LEGAL_CAPTURE : LEGAL_DOT;
+      styles[d.square] = mergeBackground(styles[d.square], layer);
+    }
   }
   if (overlay.badMove) {
-    mergeStyle(styles, overlay.badMove.from, {
-      background: COLORS.bad,
+    addStyle(styles, overlay.badMove.from, {
+      background: BAD_BG,
       boxShadow: 'inset 0 0 0 3px rgba(248, 113, 113, 1)',
     });
-    mergeStyle(styles, overlay.badMove.to, { background: COLORS.bad });
+    addStyle(styles, overlay.badMove.to, { background: BAD_BG });
   }
-  if (overlay.hintSquare) {
-    mergeStyle(styles, overlay.hintSquare, {
-      boxShadow: 'inset 0 0 0 4px rgba(59, 130, 246, 0.9)',
-      background: COLORS.hint,
-    });
+  if (overlay.hintSquares) {
+    for (const sq of overlay.hintSquares) {
+      addStyle(styles, sq, {
+        boxShadow: HINT_RING,
+        background: HINT_BG,
+      });
+    }
   }
 
-  const arrows = overlay.bestArrow
-    ? ([[overlay.bestArrow.from as Square, overlay.bestArrow.to as Square, '#10b981']] as Array<
-        [Square, Square, string?]
-      >)
+  const arrows: Array<[Square, Square, string?]> = overlay.opponentArrow
+    ? [[overlay.opponentArrow.from as Square, overlay.opponentArrow.to as Square, OPP_ARROW_COLOR]]
     : [];
 
   return (
@@ -76,8 +94,10 @@ export function Board({ fen, userColor, disabled, overlay, onDrop }: BoardProps)
       position={fen}
       boardOrientation={userColor === 'w' ? 'white' : 'black'}
       arePiecesDraggable={!disabled}
+      boardWidth={boardWidth}
       customSquareStyles={styles}
       customArrows={arrows}
+      customArrowColor={OPP_ARROW_COLOR}
       customBoardStyle={{
         borderRadius: 6,
         boxShadow: '0 6px 32px rgba(0,0,0,0.45)',
@@ -85,6 +105,7 @@ export function Board({ fen, userColor, disabled, overlay, onDrop }: BoardProps)
       customDarkSquareStyle={{ backgroundColor: '#779556' }}
       customLightSquareStyle={{ backgroundColor: '#ebecd0' }}
       onPieceDrop={(from: Square, to: Square, _piece: Piece) => onDrop(from, to)}
+      onSquareClick={(square: Square) => onSquareClick(square)}
     />
   );
 }

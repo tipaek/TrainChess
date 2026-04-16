@@ -1,4 +1,10 @@
-import { MOVE_CLASSES, type EngineEval, type MoveClass, type RevertThreshold } from './types';
+import {
+  MOVE_CLASSES,
+  type EngineEval,
+  type HintQuality,
+  type MoveClass,
+  type RevertThreshold,
+} from './types';
 
 // Chess.com-style centipawn-loss thresholds.
 const THRESHOLDS: Array<{ cls: MoveClass; maxLoss: number }> = [
@@ -12,7 +18,7 @@ const THRESHOLDS: Array<{ cls: MoveClass; maxLoss: number }> = [
 
 const MATE_SCORE = 100000;
 
-function evalToCpScalar(e: EngineEval): number {
+function evalToCpScalar(e: { cp: number | null; mate: number | null }): number {
   if (e.mate !== null) {
     return e.mate > 0 ? MATE_SCORE - e.mate : -MATE_SCORE - e.mate;
   }
@@ -26,10 +32,8 @@ function evalToCpScalar(e: EngineEval): number {
  */
 export function classifyMove(pre: EngineEval, post: EngineEval): { cls: MoveClass; lossCp: number } {
   const preScalar = evalToCpScalar(pre);
-  // post is from opponent's perspective; flip sign to keep mover's POV.
   const postFromMover = -evalToCpScalar(post);
   const loss = Math.max(0, preScalar - postFromMover);
-
   for (const { cls, maxLoss } of THRESHOLDS) {
     if (loss <= maxLoss) return { cls, lossCp: loss };
   }
@@ -72,3 +76,21 @@ export function shouldRevert(actual: MoveClass, threshold: RevertThreshold): boo
   if (threshold === 'off') return false;
   return MOVE_CLASSES.indexOf(actual) >= MOVE_CLASSES.indexOf(threshold);
 }
+
+/** Max centipawn loss (from best) that qualifies a move for a hint highlight. */
+export function hintMaxLoss(quality: HintQuality): number {
+  switch (quality) {
+    case 'best':
+      return 0;
+    case 'excellent':
+      return 10;
+    case 'good':
+      return 50;
+  }
+}
+
+export const HINT_QUALITY_LABEL: Record<HintQuality, string> = {
+  best: 'Best only',
+  excellent: 'Excellent or better',
+  good: 'Good or better',
+};

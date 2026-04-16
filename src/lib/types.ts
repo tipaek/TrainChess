@@ -11,6 +11,7 @@ export const MOVE_CLASSES = [
 export type MoveClass = (typeof MOVE_CLASSES)[number];
 
 export type RevertThreshold = 'off' | 'inaccuracy' | 'mistake' | 'blunder';
+export type HintQuality = 'best' | 'excellent' | 'good';
 
 export type Square = string;
 
@@ -23,6 +24,17 @@ export interface EngineEval {
   bestMove: string | null;
 }
 
+export interface EnginePv extends EngineEval {
+  /** MultiPV rank (1-indexed). */
+  rank: number;
+}
+
+/** Eval always stored in white's perspective so the UI never has to flip. */
+export interface WhiteEval {
+  cp: number | null;
+  mate: number | null;
+}
+
 export interface PlayedMove {
   san: string;
   from: Square;
@@ -32,8 +44,6 @@ export interface PlayedMove {
   moverColor: Color;
   moveClass?: MoveClass;
   lossCp?: number;
-  evalBeforeCp?: number | null;
-  evalAfterCp?: number | null;
 }
 
 export interface GameSettings {
@@ -41,4 +51,13 @@ export interface GameSettings {
   elo: number;
   evalOn: boolean;
   revertAt: RevertThreshold;
+  hintQuality: HintQuality;
+}
+
+export function toWhiteEval(e: EngineEval, sideToMove: Color): WhiteEval {
+  const flip = sideToMove === 'b';
+  return {
+    cp: e.cp === null ? null : flip ? -e.cp : e.cp,
+    mate: e.mate === null ? null : flip ? -e.mate : e.mate,
+  };
 }
