@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+.env*.local
+.vercel
+next-env.d.ts
+*.tsbuildinfo
+.DS_Store
+public/stockfish/stockfish.js
+public/stockfish/stockfish.wasm
