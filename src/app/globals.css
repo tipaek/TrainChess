@@ -14,8 +14,12 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
-body {
-  overflow: hidden;
+/* Disable body scroll on desktop so the board fills the viewport; allow it on mobile so
+ * the stacked layout (or an open drawer) can scroll if the content overflows. */
+@media (min-width: 768px) {
+  body {
+    overflow: hidden;
+  }
 }
 
 input[type='range'] {

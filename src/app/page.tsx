@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
-import { Board, type BoardOverlay } from '@/components/Board';
+import { Board, type BoardOverlay, type BoardRef } from '@/components/Board';
 import { SidePanel } from '@/components/SidePanel';
 import { EvalBar } from '@/components/EvalBar';
 import { classifyMove, hintMaxLoss, shouldRevert } from '@/lib/classify';
@@ -34,6 +34,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   evalOn: true,
   revertAt: 'inaccuracy',
   hintQuality: 'excellent',
+  allowPremoves: false,
 };
 
 function sideFromFen(fen: string): Color {
@@ -52,12 +53,14 @@ export default function Page() {
   const [lastLossCp, setLastLossCp] = useState<number | null>(null);
   const [gameResult, setGameResult] = useState<string>('*');
   const [exportToast, setExportToast] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const chessRef = useRef<Chess>(new Chess());
   const playerEngineRef = useRef<Engine | null>(null);
   const analyzerRef = useRef<Engine | null>(null);
   const runIdRef = useRef(0);
   const preEvalRef = useRef<{ fen: string; pvs: EnginePv[] } | null>(null);
+  const boardRef = useRef<BoardRef | null>(null);
 
   // Board sizing
   const boardWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -68,7 +71,7 @@ export default function Page() {
     if (!el) return;
     const measure = () => {
       const rect = el.getBoundingClientRect();
-      const side = Math.max(220, Math.floor(Math.min(rect.width, rect.height)));
+      const side = Math.max(200, Math.floor(Math.min(rect.width, rect.height)));
       setBoardWidth(side);
     };
     measure();
@@ -80,6 +83,16 @@ export default function Page() {
       window.removeEventListener('resize', measure);
     };
   }, []);
+
+  // Lock page scroll while the mobile drawer is open.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [drawerOpen]);
 
   useEffect(() => {
     const player = createEngine();
@@ -110,21 +123,8 @@ export default function Page() {
   }, []);
 
   const applyWhiteEval = useCallback((pv: EnginePv, sideToMove: Color) => {
-    const w = toWhiteEval(pv, sideToMove);
-    setWhiteEval(w);
+    setWhiteEval(toWhiteEval(pv, sideToMove));
   }, []);
-
-  const refreshEval = useCallback(async () => {
-    const analyzer = analyzerRef.current;
-    if (!analyzer) return;
-    const thisRun = runIdRef.current;
-    const fenSnap = chessRef.current.fen();
-    const stm = sideFromFen(fenSnap);
-    const res = await analyzer.analyze(fenSnap, { depth: EVAL_DEPTH });
-    if (thisRun !== runIdRef.current) return;
-    if (chessRef.current.fen() !== fenSnap) return;
-    applyWhiteEval({ ...res, rank: 1 }, stm);
-  }, [applyWhiteEval]);
 
   const preAnalyzeUser = useCallback(async () => {
     const analyzer = analyzerRef.current;
@@ -199,14 +199,29 @@ export default function Page() {
   const legalDestsFor = useCallback((square: string) => {
     const chess = chessRef.current;
     try {
-      const ms = chess.moves({ square: square as Parameters<typeof chess.moves>[0]['square'], verbose: true }) as Array<{ to: string; flags: string; captured?: string }>;
+      const ms = chess.moves({
+        square: square as Parameters<typeof chess.moves>[0]['square'],
+        verbose: true,
+      }) as Array<{ to: string; flags: string; captured?: string }>;
       return ms.map((m) => ({ square: m.to, capture: Boolean(m.captured) || m.flags.includes('e') }));
     } catch {
       return [];
     }
   }, []);
 
-  // Accept a user move (from/to) and run the classification + engine-reply pipeline.
+  const showLegalMovesFor = useCallback(
+    (square: string) => {
+      const chess = chessRef.current;
+      const piece = chess.get(square as Parameters<typeof chess.get>[0]);
+      if (!piece || piece.color !== settings.userColor) return false;
+      const dests = legalDestsFor(square);
+      if (dests.length === 0) return false;
+      setOverlay((o) => ({ ...o, selected: square, legalDests: dests }));
+      return true;
+    },
+    [legalDestsFor, settings.userColor],
+  );
+
   const submitUserMove = useCallback(
     (from: string, to: string): boolean => {
       if (phase !== 'userTurn') return false;
@@ -251,8 +266,7 @@ export default function Page() {
 
         if (shouldRevert(cls, settings.revertAt)) {
           setStatus(`${cls[0].toUpperCase() + cls.slice(1)} — try again`);
-          // Show the ENGINE'S best refutation from the position AFTER the bad move.
-          // Never reveal what the user should have played.
+          // Show engine's best refutation from the position AFTER the bad move.
           const oppUci = post.bestMove;
           const arrow =
             oppUci && oppUci.length >= 4
@@ -264,6 +278,8 @@ export default function Page() {
             opponentArrow: arrow,
           });
           setPhase('reverting');
+          // A queued premove no longer corresponds to the same situation after revert.
+          boardRef.current?.clearPremoves();
 
           await new Promise((r) => setTimeout(r, REVERT_HOLD_MS));
           if (thisRun !== runIdRef.current) return;
@@ -306,37 +322,35 @@ export default function Page() {
     [submitUserMove, clearSelection],
   );
 
+  const onPieceDragBegin = useCallback(
+    (square: string) => {
+      showLegalMovesFor(square);
+    },
+    [showLegalMovesFor],
+  );
+
+  const onPieceDragEnd = useCallback(() => {
+    clearSelection();
+  }, [clearSelection]);
+
   const onSquareClick = useCallback(
     (square: string) => {
       if (phase !== 'userTurn') return;
-      const chess = chessRef.current;
       const selected = overlay.selected;
 
       if (selected) {
-        // Clicking same square deselects
         if (selected === square) {
           clearSelection();
           return;
         }
-        // Attempt move
         const ok = submitUserMove(selected, square);
         if (ok) return;
-        // Not a legal destination — maybe clicking another own piece
+        // Not a legal destination; maybe selecting another own piece.
       }
 
-      const piece = chess.get(square as Parameters<typeof chess.get>[0]);
-      if (piece && piece.color === settings.userColor && chess.turn() === settings.userColor) {
-        const dests = legalDestsFor(square);
-        if (dests.length === 0) {
-          clearSelection();
-          return;
-        }
-        setOverlay((o) => ({ ...o, selected: square, legalDests: dests }));
-      } else {
-        clearSelection();
-      }
+      if (!showLegalMovesFor(square)) clearSelection();
     },
-    [phase, overlay.selected, settings.userColor, submitUserMove, legalDestsFor, clearSelection],
+    [phase, overlay.selected, submitUserMove, showLegalMovesFor, clearSelection],
   );
 
   const newGame = useCallback(
@@ -352,6 +366,8 @@ export default function Page() {
       setWhiteEval(null);
       setGameResult('*');
       preEvalRef.current = null;
+      boardRef.current?.clearPremoves();
+      setDrawerOpen(false);
 
       const playerEngine = playerEngineRef.current;
       const analyzer = analyzerRef.current;
@@ -359,7 +375,6 @@ export default function Page() {
       (async () => {
         await Promise.all([playerEngine.newGame(), analyzer.newGame()]);
         await playerEngine.setStrength(settings.elo);
-
         if (side === 'w') {
           setPhase('userTurn');
           setStatus('Your move');
@@ -381,7 +396,6 @@ export default function Page() {
 
     const compute = (pvs: EnginePv[]) => {
       if (!pvs.length) return;
-      // Best (from mover's POV) is the top-ranked line.
       const bestScalar = (() => {
         const top = pvs[0];
         if (top.mate !== null) return top.mate > 0 ? 100000 - top.mate : -100000 - top.mate;
@@ -448,55 +462,124 @@ export default function Page() {
   const showEval = settings.evalOn;
   const evalForBar = useMemo(() => (showEval ? whiteEval : null), [showEval, whiteEval]);
 
+  const sidePanel = (
+    <SidePanel
+      settings={settings}
+      onSettingsChange={setSettings}
+      onNewGame={newGame}
+      onHint={handleHint}
+      onExport={handleExport}
+      canHint={phase === 'userTurn'}
+      inProgress={moves.length > 0 && phase !== 'gameOver'}
+      moves={moves}
+      lastClass={lastClass}
+      lastLossCp={lastLossCp}
+      status={status}
+      exportToast={exportToast}
+    />
+  );
+
   return (
-    <main className="flex min-h-screen w-full flex-col gap-3 bg-[#0f0f11] p-3 text-neutral-100 md:flex-row md:gap-4 md:p-4">
-      {/* Mobile horizontal eval bar */}
+    <main className="flex h-[100dvh] w-full flex-col gap-2 bg-[#0f0f11] p-2 text-neutral-100 md:flex-row md:gap-4 md:p-4">
+      {/* Mobile eval bar (horizontal) */}
       {showEval && (
         <div className="md:hidden">
           <EvalBar whiteEval={evalForBar} bottomColor={settings.userColor} horizontal />
         </div>
       )}
 
-      {/* Desktop vertical eval bar */}
+      {/* Desktop eval bar (vertical) */}
       {showEval && (
         <div className="hidden md:flex md:items-stretch">
           <EvalBar whiteEval={evalForBar} bottomColor={settings.userColor} />
         </div>
       )}
 
-      <div className="flex flex-1 items-center justify-center">
+      {/* Board — fills remaining space on mobile, shares row on desktop */}
+      <div className="flex min-h-0 flex-1 items-center justify-center">
         <div
           ref={boardWrapperRef}
-          className="relative aspect-square w-full max-w-[min(100vw-1.5rem,calc(100vh-14rem))] md:max-h-full md:max-w-full"
+          className="relative aspect-square w-full max-w-full md:max-h-full md:max-w-full"
+          style={{ maxHeight: '100%' }}
         >
           <Board
+            ref={boardRef}
             fen={fen}
             userColor={settings.userColor}
             disabled={boardDisabled}
+            allowPremoves={settings.allowPremoves}
             overlay={overlay}
             onDrop={onDrop}
             onSquareClick={onSquareClick}
+            onPieceDragBegin={onPieceDragBegin}
+            onPieceDragEnd={onPieceDragEnd}
             boardWidth={boardWidth}
           />
         </div>
       </div>
 
-      <div className="w-full flex-shrink-0 md:w-[320px] md:max-w-[360px]">
-        <SidePanel
-          settings={settings}
-          onSettingsChange={setSettings}
-          onNewGame={newGame}
-          onHint={handleHint}
-          onExport={handleExport}
-          canHint={phase === 'userTurn'}
-          inProgress={moves.length > 0 && phase !== 'gameOver'}
-          moves={moves}
-          lastClass={lastClass}
-          lastLossCp={lastLossCp}
-          status={status}
-          exportToast={exportToast}
-        />
+      {/* Mobile bottom action bar */}
+      <div className="flex items-center gap-2 md:hidden">
+        <button
+          type="button"
+          onClick={() => newGame(settings.userColor)}
+          className="flex-1 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-black hover:bg-accent/90"
+        >
+          {moves.length > 0 && phase !== 'gameOver' ? 'Restart' : 'Start'}
+        </button>
+        <button
+          type="button"
+          onClick={handleHint}
+          disabled={phase !== 'userTurn'}
+          className="flex-1 rounded-md border border-white/10 bg-panel px-3 py-2 text-xs hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Hint
+        </button>
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          className="rounded-md border border-white/10 bg-panel px-3 py-2 text-xs font-semibold hover:bg-white/5"
+          aria-label="Open settings"
+        >
+          ☰ Menu
+        </button>
       </div>
+
+      {/* Mobile compact status readout (keeps users oriented without opening the drawer) */}
+      <div className="flex items-center justify-between rounded-md border border-white/10 bg-panelAlt/60 px-3 py-1.5 text-[11px] md:hidden">
+        <span className="font-mono text-neutral-300">{status}</span>
+        {lastClass && (
+          <span className="font-semibold text-neutral-200">{lastClass}</span>
+        )}
+      </div>
+
+      {/* Desktop side panel */}
+      <div className="hidden md:block md:w-[320px] md:max-w-[360px] md:flex-shrink-0">
+        {sidePanel}
+      </div>
+
+      {/* Mobile drawer */}
+      {drawerOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <div className="fixed inset-y-0 right-0 z-50 flex w-[90vw] max-w-[360px] flex-col bg-panel shadow-2xl md:hidden">
+            <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+              <span className="text-sm font-semibold">Settings</span>
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                className="rounded-md border border-white/10 px-2 py-1 text-xs hover:bg-white/5"
+              >
+                Close
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">{sidePanel}</div>
+          </div>
+        </>
+      )}
     </main>
   );
 }

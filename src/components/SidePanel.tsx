@@ -130,6 +130,10 @@ export function SidePanel(props: SidePanelProps) {
             <option value="good">Good or better</option>
           </select>
         </LabeledBlock>
+
+        <LabeledBlock label="Premoves">
+          <Toggle on={settings.allowPremoves} onChange={(v) => update('allowPremoves', v)} />
+        </LabeledBlock>
       </section>
 
       <button

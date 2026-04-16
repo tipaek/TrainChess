@@ -52,6 +52,7 @@ export interface GameSettings {
   evalOn: boolean;
   revertAt: RevertThreshold;
   hintQuality: HintQuality;
+  allowPremoves: boolean;
 }
 
 export function toWhiteEval(e: EngineEval, sideToMove: Color): WhiteEval {

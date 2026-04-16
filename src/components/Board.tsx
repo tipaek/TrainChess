@@ -1,9 +1,12 @@
 'use client';
 
+import { forwardRef } from 'react';
 import { Chessboard } from 'react-chessboard';
 import type { Piece, Square } from 'react-chessboard/dist/chessboard/types';
 import type { CSSProperties } from 'react';
 import type { Color } from '@/lib/types';
+
+export type BoardRef = { clearPremoves: (clearLastPieceColour?: boolean) => void };
 
 export interface BoardOverlay {
   lastMove?: { from: string; to: string };
@@ -18,9 +21,12 @@ interface BoardProps {
   fen: string;
   userColor: Color;
   disabled: boolean;
+  allowPremoves: boolean;
   overlay: BoardOverlay;
   onDrop: (from: string, to: string) => boolean;
   onSquareClick: (square: string) => void;
+  onPieceDragBegin: (square: string) => void;
+  onPieceDragEnd: () => void;
   boardWidth?: number;
 }
 
@@ -45,15 +51,21 @@ function mergeBackground(existing: CSSProperties | undefined, layer: string): CS
   return { ...(existing ?? {}), background: prev ? `${layer}, ${prev}` : layer };
 }
 
-export function Board({
-  fen,
-  userColor,
-  disabled,
-  overlay,
-  onDrop,
-  onSquareClick,
-  boardWidth,
-}: BoardProps) {
+export const Board = forwardRef<BoardRef, BoardProps>(function Board(
+  {
+    fen,
+    userColor,
+    disabled,
+    allowPremoves,
+    overlay,
+    onDrop,
+    onSquareClick,
+    onPieceDragBegin,
+    onPieceDragEnd,
+    boardWidth,
+  },
+  ref,
+) {
   const styles: Record<string, CSSProperties> = {};
 
   if (overlay.lastMove) {
@@ -78,10 +90,7 @@ export function Board({
   }
   if (overlay.hintSquares) {
     for (const sq of overlay.hintSquares) {
-      addStyle(styles, sq, {
-        boxShadow: HINT_RING,
-        background: HINT_BG,
-      });
+      addStyle(styles, sq, { boxShadow: HINT_RING, background: HINT_BG });
     }
   }
 
@@ -91,9 +100,11 @@ export function Board({
 
   return (
     <Chessboard
+      ref={ref}
       position={fen}
       boardOrientation={userColor === 'w' ? 'white' : 'black'}
-      arePiecesDraggable={!disabled}
+      arePiecesDraggable={!disabled || allowPremoves}
+      arePremovesAllowed={allowPremoves}
       boardWidth={boardWidth}
       customSquareStyles={styles}
       customArrows={arrows}
@@ -104,8 +115,12 @@ export function Board({
       }}
       customDarkSquareStyle={{ backgroundColor: '#779556' }}
       customLightSquareStyle={{ backgroundColor: '#ebecd0' }}
+      customPremoveDarkSquareStyle={{ backgroundColor: '#a56a3c' }}
+      customPremoveLightSquareStyle={{ backgroundColor: '#cf8a4f' }}
       onPieceDrop={(from: Square, to: Square, _piece: Piece) => onDrop(from, to)}
       onSquareClick={(square: Square) => onSquareClick(square)}
+      onPieceDragBegin={(_piece: Piece, square: Square) => onPieceDragBegin(square)}
+      onPieceDragEnd={() => onPieceDragEnd()}
     />
   );
-}
+});
