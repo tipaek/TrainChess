@@ -42,6 +42,22 @@ function sideFromFen(fen: string): Color {
   return fen.split(' ')[1] === 'b' ? 'b' : 'w';
 }
 
+/**
+ * Pick one of the top candidate PVs at random among those within `tolCp` of
+ * the best score. Returns its UCI string, or null if no candidates exist.
+ */
+function pickCandidate(pvs: EnginePv[], tolCp: number): string | null {
+  const usable = pvs.filter((p) => p.bestMove);
+  if (usable.length === 0) return null;
+  if (usable.length === 1 || tolCp <= 0) return usable[0].bestMove!;
+  const score = (p: EnginePv) =>
+    p.mate !== null ? (p.mate > 0 ? 1_000_000 - p.mate : -1_000_000 - p.mate) : p.cp ?? 0;
+  const best = score(usable[0]);
+  const pool = usable.filter((p) => best - score(p) <= tolCp);
+  const chosen = pool[Math.floor(Math.random() * pool.length)];
+  return chosen.bestMove!;
+}
+
 export default function Page() {
   const [settings, setSettings] = useState<GameSettings>(DEFAULT_SETTINGS);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -168,16 +184,27 @@ export default function Page() {
     setPhase('engineTurn');
     setStatus('Engine thinking…');
     const fenSnapshot = chessRef.current.fen();
-    const { depth, movetime } = strengthForElo(settings.elo);
-    const res = await engine.analyze(fenSnapshot, { depth, movetime });
+    const tier = strengthForElo(settings.elo);
+    // Widen the candidate pool in the opening so games don't all look the same.
+    const plies = chessRef.current.history().length;
+    const inOpening = plies < 14;
+    const multipv = Math.min(8, inOpening ? Math.max(tier.multipv, 5) : tier.multipv);
+    const randomCp = inOpening ? Math.max(tier.randomCp, 35) : tier.randomCp;
+
+    const pvs = await engine.analyzeMulti(fenSnapshot, {
+      depth: tier.depth,
+      movetime: tier.movetime,
+      multipv,
+    });
     if (thisRun !== runIdRef.current) return;
-    if (!res.bestMove) {
+    const pick = pickCandidate(pvs, randomCp);
+    if (!pick) {
       checkGameOver();
       return;
     }
-    const from = res.bestMove.slice(0, 2);
-    const to = res.bestMove.slice(2, 4);
-    const promotion = res.bestMove.length > 4 ? res.bestMove.slice(4, 5) : undefined;
+    const from = pick.slice(0, 2);
+    const to = pick.slice(2, 4);
+    const promotion = pick.length > 4 ? pick.slice(4, 5) : undefined;
     try {
       chessRef.current.move({ from, to, promotion });
     } catch {

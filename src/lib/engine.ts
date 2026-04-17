@@ -191,27 +191,37 @@ export function createEngine(): Engine {
  * Map ELO → Stockfish search parameters for the playing engine.
  *
  * Stockfish 17 NNUE is so strong that even Skill Level 5 at full depth beats
- * club players. Capping depth is what actually produces human-level mistakes.
- * Calibration below roughly matches Lichess's engine levels.
+ * club players. Capping depth + feeding a widened MultiPV from which we pick
+ * randomly among "acceptable" moves produces play that actually feels like
+ * the declared rating.
+ *
+ * - `skill`     : UCI Skill Level (0..20) — Stockfish's own noise knob.
+ * - `depth`     : hard depth cap for the search.
+ * - `movetime`  : time budget in ms.
+ * - `multipv`   : how many candidate lines to consider. >1 lets us randomize.
+ * - `randomCp`  : how far below best (cp) we tolerate when random-picking.
+ *                 Higher = weaker / more varied play.
  */
 export function strengthForElo(elo: number): {
   skill: number;
   depth: number;
   movetime: number;
+  multipv: number;
+  randomCp: number;
 } {
-  if (elo <= 850) return { skill: 0, depth: 1, movetime: 50 };
-  if (elo <= 1000) return { skill: 1, depth: 2, movetime: 80 };
-  if (elo <= 1150) return { skill: 2, depth: 2, movetime: 100 };
-  if (elo <= 1300) return { skill: 4, depth: 3, movetime: 150 };
-  if (elo <= 1450) return { skill: 6, depth: 4, movetime: 200 };
-  if (elo <= 1600) return { skill: 8, depth: 5, movetime: 300 };
-  if (elo <= 1750) return { skill: 10, depth: 6, movetime: 400 };
-  if (elo <= 1900) return { skill: 12, depth: 7, movetime: 500 };
-  if (elo <= 2050) return { skill: 14, depth: 9, movetime: 600 };
-  if (elo <= 2200) return { skill: 16, depth: 11, movetime: 800 };
-  if (elo <= 2350) return { skill: 18, depth: 13, movetime: 1000 };
-  if (elo <= 2500) return { skill: 19, depth: 15, movetime: 1200 };
-  if (elo <= 2700) return { skill: 20, depth: 18, movetime: 1500 };
-  return { skill: 20, depth: 22, movetime: 2000 };
+  if (elo <= 850) return { skill: 0, depth: 1, movetime: 20, multipv: 6, randomCp: 600 };
+  if (elo <= 1000) return { skill: 0, depth: 1, movetime: 40, multipv: 6, randomCp: 450 };
+  if (elo <= 1150) return { skill: 1, depth: 2, movetime: 60, multipv: 5, randomCp: 350 };
+  if (elo <= 1300) return { skill: 2, depth: 2, movetime: 90, multipv: 5, randomCp: 260 };
+  if (elo <= 1450) return { skill: 3, depth: 3, movetime: 120, multipv: 5, randomCp: 200 };
+  if (elo <= 1600) return { skill: 5, depth: 3, movetime: 160, multipv: 4, randomCp: 150 };
+  if (elo <= 1750) return { skill: 7, depth: 4, movetime: 220, multipv: 4, randomCp: 110 };
+  if (elo <= 1900) return { skill: 9, depth: 5, movetime: 300, multipv: 3, randomCp: 80 };
+  if (elo <= 2050) return { skill: 11, depth: 6, movetime: 400, multipv: 3, randomCp: 55 };
+  if (elo <= 2200) return { skill: 13, depth: 8, movetime: 550, multipv: 3, randomCp: 35 };
+  if (elo <= 2350) return { skill: 15, depth: 10, movetime: 700, multipv: 2, randomCp: 22 };
+  if (elo <= 2500) return { skill: 17, depth: 12, movetime: 900, multipv: 2, randomCp: 14 };
+  if (elo <= 2700) return { skill: 19, depth: 16, movetime: 1300, multipv: 2, randomCp: 8 };
+  return { skill: 20, depth: 22, movetime: 2000, multipv: 1, randomCp: 0 };
 }
 
