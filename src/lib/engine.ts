@@ -65,9 +65,12 @@ class Engine {
 
   async setStrength(elo: number) {
     await this.ready();
+    const { skill } = strengthForElo(elo);
     await this.queue(async () => {
-      this.send('setoption name UCI_LimitStrength value true');
-      this.send(`setoption name UCI_Elo value ${Math.round(elo)}`);
+      // UCI_LimitStrength on SF 17 NNUE is weakly calibrated — Skill Level is
+      // the effective knob. Disable LimitStrength so Skill actually applies.
+      this.send('setoption name UCI_LimitStrength value false');
+      this.send(`setoption name Skill Level value ${skill}`);
       await this.sync();
     });
   }
@@ -76,6 +79,7 @@ class Engine {
     await this.ready();
     await this.queue(async () => {
       this.send('setoption name UCI_LimitStrength value false');
+      this.send('setoption name Skill Level value 20');
       await this.sync();
     });
   }
@@ -183,11 +187,31 @@ export function createEngine(): Engine {
   return new Engine();
 }
 
-/** Map ELO → movetime(ms) for the playing engine. Lower ELO thinks briefly. */
-export function moveTimeForElo(elo: number): number {
-  if (elo <= 1000) return 250;
-  if (elo <= 1500) return 500;
-  if (elo <= 2000) return 900;
-  if (elo <= 2400) return 1400;
-  return 2000;
+/**
+ * Map ELO → Stockfish search parameters for the playing engine.
+ *
+ * Stockfish 17 NNUE is so strong that even Skill Level 5 at full depth beats
+ * club players. Capping depth is what actually produces human-level mistakes.
+ * Calibration below roughly matches Lichess's engine levels.
+ */
+export function strengthForElo(elo: number): {
+  skill: number;
+  depth: number;
+  movetime: number;
+} {
+  if (elo <= 850) return { skill: 0, depth: 1, movetime: 50 };
+  if (elo <= 1000) return { skill: 1, depth: 2, movetime: 80 };
+  if (elo <= 1150) return { skill: 2, depth: 2, movetime: 100 };
+  if (elo <= 1300) return { skill: 4, depth: 3, movetime: 150 };
+  if (elo <= 1450) return { skill: 6, depth: 4, movetime: 200 };
+  if (elo <= 1600) return { skill: 8, depth: 5, movetime: 300 };
+  if (elo <= 1750) return { skill: 10, depth: 6, movetime: 400 };
+  if (elo <= 1900) return { skill: 12, depth: 7, movetime: 500 };
+  if (elo <= 2050) return { skill: 14, depth: 9, movetime: 600 };
+  if (elo <= 2200) return { skill: 16, depth: 11, movetime: 800 };
+  if (elo <= 2350) return { skill: 18, depth: 13, movetime: 1000 };
+  if (elo <= 2500) return { skill: 19, depth: 15, movetime: 1200 };
+  if (elo <= 2700) return { skill: 20, depth: 18, movetime: 1500 };
+  return { skill: 20, depth: 22, movetime: 2000 };
 }
+

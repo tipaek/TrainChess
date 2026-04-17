@@ -7,7 +7,7 @@ import { SidePanel } from '@/components/SidePanel';
 import { EvalBar } from '@/components/EvalBar';
 import { classifyMove, hintMaxLoss, shouldRevert } from '@/lib/classify';
 import { buildPgn, downloadPgn } from '@/lib/pgn';
-import { createEngine, moveTimeForElo, type Engine } from '@/lib/engine';
+import { createEngine, strengthForElo, type Engine } from '@/lib/engine';
 import type {
   Color,
   EnginePv,
@@ -167,9 +167,8 @@ export default function Page() {
     setPhase('engineTurn');
     setStatus('Engine thinking…');
     const fenSnapshot = chessRef.current.fen();
-    const res = await engine.analyze(fenSnapshot, {
-      movetime: moveTimeForElo(settings.elo),
-    });
+    const { depth, movetime } = strengthForElo(settings.elo);
+    const res = await engine.analyze(fenSnapshot, { depth, movetime });
     if (thisRun !== runIdRef.current) return;
     if (!res.bestMove) {
       checkGameOver();
