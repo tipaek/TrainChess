@@ -6,6 +6,7 @@ import { Board, type BoardOverlay, type BoardRef } from '@/components/Board';
 import { SidePanel } from '@/components/SidePanel';
 import { EvalBar } from '@/components/EvalBar';
 import { classifyMove, hintMaxLoss, shouldRevert } from '@/lib/classify';
+import { isBookHistory } from '@/lib/openings';
 import { buildPgn, downloadPgn } from '@/lib/pgn';
 import { createEngine, strengthForElo, type Engine } from '@/lib/engine';
 import type {
@@ -244,6 +245,9 @@ export default function Page() {
       const fenAfter = chessRef.current.fen();
       const afterStm = sideFromFen(fenAfter);
 
+      const playedUci = `${move.from}${move.to}${move.promotion ?? ''}`;
+      const inBook = isBookHistory(chessRef.current.history());
+
       (async () => {
         const analyzer = analyzerRef.current;
         if (!analyzer) return;
@@ -258,7 +262,9 @@ export default function Page() {
         if (thisRun !== runIdRef.current) return;
 
         const pre = prePvs[0] ?? { cp: null, mate: null, bestMove: null };
-        const { cls, lossCp } = classifyMove(pre, post);
+        const classified = classifyMove(pre, post, playedUci);
+        const cls: MoveClass = inBook ? 'book' : classified.cls;
+        const lossCp = classified.lossCp;
         setLastClass(cls);
         setLastLossCp(lossCp);
         applyWhiteEval({ ...post, rank: 1 }, afterStm);

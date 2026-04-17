@@ -6,16 +6,6 @@ import {
   type RevertThreshold,
 } from './types';
 
-// Chess.com-style centipawn-loss thresholds.
-const THRESHOLDS: Array<{ cls: MoveClass; maxLoss: number }> = [
-  { cls: 'best', maxLoss: 0 },
-  { cls: 'excellent', maxLoss: 10 },
-  { cls: 'good', maxLoss: 50 },
-  { cls: 'inaccuracy', maxLoss: 100 },
-  { cls: 'mistake', maxLoss: 200 },
-  { cls: 'blunder', maxLoss: Infinity },
-];
-
 const MATE_SCORE = 100000;
 
 function evalToCpScalar(e: { cp: number | null; mate: number | null }): number {
@@ -26,21 +16,57 @@ function evalToCpScalar(e: { cp: number | null; mate: number | null }): number {
 }
 
 /**
- * Classify a move.
- * @param pre   engine eval on the position BEFORE the move (from mover's POV)
- * @param post  engine eval on the position AFTER the move (from opponent's POV, as UCI reports it)
+ * Stockfish-style centipawn → win-probability (0..100) mapping. Same logistic
+ * shape that chess.com uses for its move-quality calculation, so a 200cp drop
+ * from a winning position is forgiven (you're still winning) while the same
+ * drop from an even position is punished.
  */
-export function classifyMove(pre: EngineEval, post: EngineEval): { cls: MoveClass; lossCp: number } {
+function winProb(cp: number): number {
+  // Clamp to keep the exponent finite for mate scores.
+  const clamped = Math.max(-2000, Math.min(2000, cp));
+  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * clamped)) - 1);
+}
+
+// Win-probability loss thresholds (percentage points).
+const WP_THRESHOLDS: Array<{ cls: MoveClass; max: number }> = [
+  { cls: 'best', max: 0.5 },
+  { cls: 'excellent', max: 2 },
+  { cls: 'good', max: 5 },
+  { cls: 'inaccuracy', max: 10 },
+  { cls: 'mistake', max: 20 },
+  { cls: 'blunder', max: Infinity },
+];
+
+/**
+ * Classify a played move.
+ * @param pre        engine eval on the position BEFORE the move (mover's POV)
+ * @param post       engine eval on the position AFTER the move (opponent's POV, as UCI reports it)
+ * @param playedUci  UCI of the move that was actually played; if it matches the
+ *                   engine's #1 from `pre`, the move is forced to "best" so a
+ *                   tiny tail-end depth disagreement doesn't downgrade it.
+ */
+export function classifyMove(
+  pre: EngineEval,
+  post: EngineEval,
+  playedUci?: string,
+): { cls: MoveClass; lossCp: number } {
   const preScalar = evalToCpScalar(pre);
   const postFromMover = -evalToCpScalar(post);
-  const loss = Math.max(0, preScalar - postFromMover);
-  for (const { cls, maxLoss } of THRESHOLDS) {
-    if (loss <= maxLoss) return { cls, lossCp: loss };
+  const lossCp = Math.max(0, preScalar - postFromMover);
+
+  if (playedUci && pre.bestMove && playedUci === pre.bestMove) {
+    return { cls: 'best', lossCp };
   }
-  return { cls: 'blunder', lossCp: loss };
+
+  const wpLoss = Math.max(0, winProb(preScalar) - winProb(postFromMover));
+  for (const { cls, max } of WP_THRESHOLDS) {
+    if (wpLoss <= max) return { cls, lossCp };
+  }
+  return { cls: 'blunder', lossCp };
 }
 
 const GLYPH: Record<MoveClass, string> = {
+  book: '',
   best: '!!',
   excellent: '!',
   good: '',
@@ -50,6 +76,7 @@ const GLYPH: Record<MoveClass, string> = {
 };
 
 const COLOR: Record<MoveClass, string> = {
+  book: 'text-sky-300',
   best: 'text-emerald-300',
   excellent: 'text-emerald-200',
   good: 'text-slate-200',
@@ -59,6 +86,7 @@ const COLOR: Record<MoveClass, string> = {
 };
 
 const LABEL: Record<MoveClass, string> = {
+  book: 'Book',
   best: 'Best',
   excellent: 'Excellent',
   good: 'Good',

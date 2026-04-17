@@ -180,7 +180,7 @@ export function SidePanel(props: SidePanelProps) {
             <span className="text-neutral-400">Last move</span>
             <span className={`font-semibold ${classColor(lastClass)}`}>
               {classLabel(lastClass)}
-              {lastLossCp !== null && lastLossCp > 0 && (
+              {lastClass !== 'book' && lastLossCp !== null && lastLossCp > 0 && (
                 <span className="ml-1 text-neutral-400">(-{lastLossCp}cp)</span>
               )}
             </span>
