@@ -1,10 +1,11 @@
-import type { EngineEval } from './types';
+import type { EngineEval, EnginePv } from './types';
 
 type Listener = (line: string) => void;
 
 interface SearchLimits {
   depth?: number;
   movetime?: number;
+  multipv?: number;
 }
 
 class Engine {
@@ -12,6 +13,7 @@ class Engine {
   private listeners = new Set<Listener>();
   private readyPromise: Promise<void>;
   private busy: Promise<unknown> = Promise.resolve();
+  private currentMultiPv = 1;
 
   constructor() {
     this.worker = new Worker('/stockfish/stockfish.js');
@@ -33,7 +35,6 @@ class Engine {
     return () => this.listeners.delete(fn);
   }
 
-  /** Send a command, resolve when a line starting with `terminator` arrives. */
   private exchange(cmd: string, terminator: string): Promise<string[]> {
     return new Promise((resolve) => {
       const lines: string[] = [];
@@ -56,7 +57,6 @@ class Engine {
     await this.readyPromise;
   }
 
-  /** Serialize search requests so concurrent callers don't clobber each other. */
   private queue<T>(task: () => Promise<T>): Promise<T> {
     const next = this.busy.then(task, task);
     this.busy = next.catch(() => undefined);
@@ -88,34 +88,75 @@ class Engine {
     });
   }
 
-  async analyze(fen: string, limits: SearchLimits): Promise<EngineEval> {
+  async analyze(fen: string, limits: SearchLimits = {}): Promise<EngineEval> {
+    const pvs = await this.analyzeMulti(fen, limits);
+    return pvs[0] ?? { cp: null, mate: null, bestMove: null };
+  }
+
+  async analyzeMulti(fen: string, limits: SearchLimits = {}): Promise<EnginePv[]> {
     await this.ready();
     return this.queue(() => this.runSearch(fen, limits));
   }
 
-  private runSearch(fen: string, limits: SearchLimits): Promise<EngineEval> {
+  private async runSearch(fen: string, limits: SearchLimits): Promise<EnginePv[]> {
+    const desiredMultiPv = Math.max(1, limits.multipv ?? 1);
+    if (desiredMultiPv !== this.currentMultiPv) {
+      this.send(`setoption name MultiPV value ${desiredMultiPv}`);
+      await this.sync();
+      this.currentMultiPv = desiredMultiPv;
+    }
+
     return new Promise((resolve) => {
-      let latestCp: number | null = null;
-      let latestMate: number | null = null;
+      // multipv index → latest partial eval
+      const latest = new Map<number, { cp: number | null; mate: number | null; pv: string[] }>();
+      const ensure = (rank: number) => {
+        let v = latest.get(rank);
+        if (!v) {
+          v = { cp: null, mate: null, pv: [] };
+          latest.set(rank, v);
+        }
+        return v;
+      };
+
       const off = this.onLine((line) => {
         if (line.startsWith('info')) {
-          // Only trust multipv 1 lines (default when MultiPV=1).
-          const cp = line.match(/score cp (-?\d+)/);
-          const mate = line.match(/score mate (-?\d+)/);
+          const rankMatch = line.match(/\bmultipv (\d+)/);
+          const rank = rankMatch ? Number(rankMatch[1]) : 1;
+          const v = ensure(rank);
+
+          const cp = line.match(/\bscore cp (-?\d+)/);
+          const mate = line.match(/\bscore mate (-?\d+)/);
           if (cp) {
-            latestCp = Number(cp[1]);
-            latestMate = null;
+            v.cp = Number(cp[1]);
+            v.mate = null;
           } else if (mate) {
-            latestMate = Number(mate[1]);
-            latestCp = null;
+            v.mate = Number(mate[1]);
+            v.cp = null;
           }
+          const pv = line.match(/\bpv (.+)$/);
+          if (pv) v.pv = pv[1].trim().split(/\s+/);
         } else if (line.startsWith('bestmove')) {
           off();
-          const m = line.match(/^bestmove\s+(\S+)/);
-          const bestMove = m && m[1] !== '(none)' ? m[1] : null;
-          resolve({ cp: latestCp, mate: latestMate, bestMove });
+          const ranks = [...latest.keys()].sort((a, b) => a - b);
+          const pvs: EnginePv[] = ranks.map((rank) => {
+            const v = latest.get(rank)!;
+            return {
+              rank,
+              cp: v.cp,
+              mate: v.mate,
+              bestMove: v.pv[0] ?? null,
+            };
+          });
+          // Guarantee at least the bestmove line even if no info arrived.
+          if (pvs.length === 0) {
+            const m = line.match(/^bestmove\s+(\S+)/);
+            const bestMove = m && m[1] !== '(none)' ? m[1] : null;
+            pvs.push({ rank: 1, cp: null, mate: null, bestMove });
+          }
+          resolve(pvs);
         }
       });
+
       this.send(`position fen ${fen}`);
       const parts: string[] = ['go'];
       if (limits.depth !== undefined) parts.push(`depth ${limits.depth}`);

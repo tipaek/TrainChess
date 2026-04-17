@@ -1,13 +1,20 @@
 'use client';
 
-import type { Color, GameSettings, MoveClass, PlayedMove, RevertThreshold } from '@/lib/types';
+import type {
+  Color,
+  GameSettings,
+  HintQuality,
+  MoveClass,
+  PlayedMove,
+  RevertThreshold,
+} from '@/lib/types';
 import { classColor, classLabel } from '@/lib/classify';
 import { MoveList } from './MoveList';
 
 interface SidePanelProps {
   settings: GameSettings;
   onSettingsChange: (next: GameSettings) => void;
-  onNewGame: (side: Color | 'random') => void;
+  onNewGame: (side: Color) => void;
   onHint: () => void;
   onExport: () => void;
   canHint: boolean;
@@ -16,6 +23,7 @@ interface SidePanelProps {
   lastClass: MoveClass | null;
   lastLossCp: number | null;
   status: string;
+  exportToast: string | null;
 }
 
 export function SidePanel(props: SidePanelProps) {
@@ -31,6 +39,7 @@ export function SidePanel(props: SidePanelProps) {
     lastClass,
     lastLossCp,
     status,
+    exportToast,
   } = props;
 
   const update = <K extends keyof GameSettings>(key: K, value: GameSettings[K]) => {
@@ -38,7 +47,7 @@ export function SidePanel(props: SidePanelProps) {
   };
 
   return (
-    <aside className="flex h-full w-full flex-col gap-4 rounded-xl bg-panel p-4 text-sm shadow-xl">
+    <aside className="flex h-full w-full flex-col gap-3 rounded-xl bg-panel p-4 text-sm shadow-xl">
       <div>
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">TrainChess</h1>
@@ -57,7 +66,7 @@ export function SidePanel(props: SidePanelProps) {
                 key={c}
                 type="button"
                 onClick={() => update('userColor', c)}
-                className={`flex-1 rounded-md border px-2 py-1 text-xs transition ${
+                className={`flex-1 rounded-md border px-2 py-1.5 text-xs transition ${
                   settings.userColor === c
                     ? 'border-accent bg-accent/20 text-white'
                     : 'border-white/10 text-neutral-300 hover:bg-white/5'
@@ -94,19 +103,14 @@ export function SidePanel(props: SidePanelProps) {
         </LabeledBlock>
 
         <LabeledBlock label="Evaluation">
-          <Toggle
-            on={settings.evalOn}
-            onChange={(v) => update('evalOn', v)}
-            labelOn="On"
-            labelOff="Off"
-          />
+          <Toggle on={settings.evalOn} onChange={(v) => update('evalOn', v)} />
         </LabeledBlock>
 
         <LabeledBlock label="Revert on">
           <select
             value={settings.revertAt}
             onChange={(e) => update('revertAt', e.target.value as RevertThreshold)}
-            className="w-full rounded-md border border-white/10 bg-panelAlt px-2 py-1 text-xs"
+            className="w-full rounded-md border border-white/10 bg-panelAlt px-2 py-1.5 text-xs"
           >
             <option value="off">Off — never revert</option>
             <option value="inaccuracy">Inaccuracy or worse</option>
@@ -114,25 +118,31 @@ export function SidePanel(props: SidePanelProps) {
             <option value="blunder">Blunder only</option>
           </select>
         </LabeledBlock>
+
+        <LabeledBlock label="Hint strictness">
+          <select
+            value={settings.hintQuality}
+            onChange={(e) => update('hintQuality', e.target.value as HintQuality)}
+            className="w-full rounded-md border border-white/10 bg-panelAlt px-2 py-1.5 text-xs"
+          >
+            <option value="best">Best only</option>
+            <option value="excellent">Excellent or better</option>
+            <option value="good">Good or better</option>
+          </select>
+        </LabeledBlock>
+
+        <LabeledBlock label="Premoves">
+          <Toggle on={settings.allowPremoves} onChange={(v) => update('allowPremoves', v)} />
+        </LabeledBlock>
       </section>
 
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => onNewGame(settings.userColor)}
-          className="flex-1 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-black hover:bg-accent/90"
-        >
-          {inProgress ? 'Restart' : 'Start'}
-        </button>
-        <button
-          type="button"
-          onClick={() => onNewGame('random')}
-          className="rounded-md border border-white/10 px-3 py-2 text-xs hover:bg-white/5"
-          title="New game with random side"
-        >
-          Random
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => onNewGame(settings.userColor)}
+        className="rounded-md bg-accent px-3 py-2 text-xs font-semibold text-black hover:bg-accent/90"
+      >
+        {inProgress ? 'Restart game' : 'Start game'}
+      </button>
 
       <div className="flex gap-2">
         <button
@@ -143,14 +153,21 @@ export function SidePanel(props: SidePanelProps) {
         >
           Hint
         </button>
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={moves.length === 0}
-          className="flex-1 rounded-md border border-white/10 px-3 py-2 text-xs hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Export PGN
-        </button>
+        <div className="relative flex-1">
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={moves.length === 0}
+            className="w-full rounded-md border border-white/10 px-3 py-2 text-xs hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Export PGN
+          </button>
+          {exportToast && (
+            <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-black shadow">
+              {exportToast}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="rounded-md border border-white/10 bg-panelAlt/60 px-3 py-2 text-xs">
@@ -191,17 +208,7 @@ function LabeledBlock({
   );
 }
 
-function Toggle({
-  on,
-  onChange,
-  labelOn,
-  labelOff,
-}: {
-  on: boolean;
-  onChange: (v: boolean) => void;
-  labelOn: string;
-  labelOff: string;
-}) {
+function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
       type="button"
@@ -210,10 +217,8 @@ function Toggle({
         on ? 'border-accent bg-accent/20 text-white' : 'border-white/10 text-neutral-300 hover:bg-white/5'
       }`}
     >
-      <span>{on ? labelOn : labelOff}</span>
-      <span
-        className={`h-4 w-8 rounded-full transition ${on ? 'bg-accent' : 'bg-neutral-600'} relative`}
-      >
+      <span>{on ? 'On' : 'Off'}</span>
+      <span className={`relative h-4 w-8 rounded-full transition ${on ? 'bg-accent' : 'bg-neutral-600'}`}>
         <span
           className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition ${
             on ? 'left-4' : 'left-0.5'
