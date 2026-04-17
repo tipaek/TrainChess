@@ -1,6 +1,7 @@
 export type Color = 'w' | 'b';
 
 export const MOVE_CLASSES = [
+  'book',
   'best',
   'excellent',
   'good',
