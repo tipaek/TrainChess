@@ -42,6 +42,52 @@ function sideFromFen(fen: string): Color {
   return fen.split(' ')[1] === 'b' ? 'b' : 'w';
 }
 
+/**
+ * Convert the first `maxMoves` UCI moves of a principal variation into
+ * from/to arrow pairs by replaying them on a scratch board. Stops early if a
+ * move is malformed or illegal.
+ */
+function planArrows(
+  fen: string,
+  pv: string[] | undefined,
+  maxMoves: number,
+): { from: string; to: string }[] {
+  if (!pv || pv.length === 0) return [];
+  const scratch = new Chess(fen);
+  const out: { from: string; to: string }[] = [];
+  for (let i = 0; i < Math.min(maxMoves, pv.length); i++) {
+    const uci = pv[i];
+    if (!uci || uci.length < 4) break;
+    const from = uci.slice(0, 2);
+    const to = uci.slice(2, 4);
+    const promotion = uci.length > 4 ? uci.slice(4, 5) : undefined;
+    try {
+      const played = scratch.move({ from, to, promotion });
+      if (!played) break;
+      out.push({ from: played.from, to: played.to });
+    } catch {
+      break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Pick one of the top candidate PVs at random among those within `tolCp` of
+ * the best score. Returns its UCI string, or null if no candidates exist.
+ */
+function pickCandidate(pvs: EnginePv[], tolCp: number): string | null {
+  const usable = pvs.filter((p) => p.bestMove);
+  if (usable.length === 0) return null;
+  if (usable.length === 1 || tolCp <= 0) return usable[0].bestMove!;
+  const score = (p: EnginePv) =>
+    p.mate !== null ? (p.mate > 0 ? 1_000_000 - p.mate : -1_000_000 - p.mate) : p.cp ?? 0;
+  const best = score(usable[0]);
+  const pool = usable.filter((p) => best - score(p) <= tolCp);
+  const chosen = pool[Math.floor(Math.random() * pool.length)];
+  return chosen.bestMove!;
+}
+
 export default function Page() {
   const [settings, setSettings] = useState<GameSettings>(DEFAULT_SETTINGS);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -168,16 +214,27 @@ export default function Page() {
     setPhase('engineTurn');
     setStatus('Engine thinking…');
     const fenSnapshot = chessRef.current.fen();
-    const { depth, movetime } = strengthForElo(settings.elo);
-    const res = await engine.analyze(fenSnapshot, { depth, movetime });
+    const tier = strengthForElo(settings.elo);
+    // Widen the candidate pool in the opening so games don't all look the same.
+    const plies = chessRef.current.history().length;
+    const inOpening = plies < 14;
+    const multipv = Math.min(8, inOpening ? Math.max(tier.multipv, 5) : tier.multipv);
+    const randomCp = inOpening ? Math.max(tier.randomCp, 35) : tier.randomCp;
+
+    const pvs = await engine.analyzeMulti(fenSnapshot, {
+      depth: tier.depth,
+      movetime: tier.movetime,
+      multipv,
+    });
     if (thisRun !== runIdRef.current) return;
-    if (!res.bestMove) {
+    const pick = pickCandidate(pvs, randomCp);
+    if (!pick) {
       checkGameOver();
       return;
     }
-    const from = res.bestMove.slice(0, 2);
-    const to = res.bestMove.slice(2, 4);
-    const promotion = res.bestMove.length > 4 ? res.bestMove.slice(4, 5) : undefined;
+    const from = pick.slice(0, 2);
+    const to = pick.slice(2, 4);
+    const promotion = pick.length > 4 ? pick.slice(4, 5) : undefined;
     try {
       chessRef.current.move({ from, to, promotion });
     } catch {
@@ -261,7 +318,7 @@ export default function Page() {
         const [prePvs, post] = await Promise.all([prePromise, postPromise]);
         if (thisRun !== runIdRef.current) return;
 
-        const pre = prePvs[0] ?? { cp: null, mate: null, bestMove: null };
+        const pre = prePvs[0] ?? { cp: null, mate: null, bestMove: null, pv: [] };
         const classified = classifyMove(pre, post, playedUci);
         const cls: MoveClass = inBook ? 'book' : classified.cls;
         const lossCp = classified.lossCp;
@@ -271,16 +328,14 @@ export default function Page() {
 
         if (shouldRevert(cls, settings.revertAt)) {
           setStatus(`${cls[0].toUpperCase() + cls.slice(1)} — try again`);
-          // Show engine's best refutation from the position AFTER the bad move.
-          const oppUci = post.bestMove;
-          const arrow =
-            oppUci && oppUci.length >= 4
-              ? { from: oppUci.slice(0, 2), to: oppUci.slice(2, 4) }
-              : undefined;
+          // Show the engine's planned continuation from the position AFTER the
+          // bad move — up to four plies, so the player sees the refutation
+          // plus the next couple of moves in the plan.
+          const plan = planArrows(fenAfter, post.pv, 4);
           setOverlay({
             lastMove: { from: move.from, to: move.to },
             badMove: { from: move.from, to: move.to },
-            opponentArrow: arrow,
+            opponentPlan: plan,
           });
           setPhase('reverting');
           // A queued premove no longer corresponds to the same situation after revert.

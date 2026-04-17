@@ -134,9 +134,155 @@ const LINES: string[][] = [
   ['Nf3', 'Nf6', 'c4', 'g6', 'Nc3', 'd5'],
   ['Nf3', 'd5', 'c4'], // Reti
 
-  // --- Other ---
-  ['b3'], // Larsen
-  ['g3'], // Benko Opening
+  // --- Flank / irregular ---
+  // Bird's Opening
+  ['f4', 'd5', 'Nf3', 'Nf6', 'e3'],
+  ['f4', 'd5', 'Nf3', 'g6'],
+  ['f4', 'Nf6', 'Nf3', 'g6'],
+  // From's Gambit
+  ['f4', 'e5', 'fxe5', 'd6'],
+  // Sokolsky / Polish / Orangutan (1.b4)
+  ['b4', 'e5', 'Bb2', 'Bxb4', 'Bxe5', 'Nf6'],
+  ['b4', 'e5', 'Bb2', 'f6', 'e4'],
+  ['b4', 'e5', 'Bb2', 'Bxb4', 'Bxe5', 'Nf6', 'Nf3'],
+  ['b4', 'e5', 'a3'],
+  ['b4', 'd5', 'Bb2', 'Nf6', 'Nf3', 'e6'],
+  ['b4', 'd5', 'Bb2', 'Qd6'],
+  ['b4', 'Nf6', 'Bb2', 'e6', 'b5'],
+  ['b4', 'c6', 'Bb2', 'a5'],
+  ['b4', 'c5', 'bxc5'],
+  ['b4', 'e6', 'Bb2', 'Nf6', 'a3'],
+  ['b4', 'd5', 'Nf3'],
+  // Nimzo-Larsen (1.b3)
+  ['b3', 'e5', 'Bb2', 'Nc6', 'e3'],
+  ['b3', 'd5', 'Bb2', 'Nf6', 'Nf3', 'e6'],
+  ['b3', 'Nf6', 'Bb2', 'g6', 'g3'],
+  // Van Geet (1.Nc3)
+  ['Nc3', 'd5', 'e4'],
+  ['Nc3', 'Nf6', 'd4'],
+  // Grob
+  ['g4', 'd5', 'Bg2', 'Bxg4'],
+  // Benko-style / irregular
+  ['g3', 'd5', 'Bg2'],
+  ['g3', 'e5', 'Bg2', 'd5'],
+
+  // --- Deeper main lines ---
+  // Italian — Giuoco Pianissimo & Evans
+  ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'b4'], // Evans Gambit
+  ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'b4', 'Bxb4', 'c3', 'Ba5', 'd4'],
+  ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'c3', 'Nf6', 'd4', 'exd4', 'cxd4', 'Bb4+'],
+  ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Nf6', 'd4'], // Scotch Gambit
+  // Ponziani
+  ['e4', 'e5', 'Nf3', 'Nc6', 'c3'],
+  // Bishop's Opening
+  ['e4', 'e5', 'Bc4', 'Nf6', 'd3'],
+  ['e4', 'e5', 'Bc4', 'Nf6', 'Nc3'],
+  // Four Knights
+  ['e4', 'e5', 'Nf3', 'Nc6', 'Nc3', 'Nf6', 'Bb5'],
+  ['e4', 'e5', 'Nf3', 'Nc6', 'Nc3', 'Nf6', 'Bc4'], // Italian Four Knights
+  // Ruy Lopez — Marshall
+  ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'a6', 'Ba4', 'Nf6', 'O-O', 'Be7', 'Re1', 'b5', 'Bb3', 'O-O', 'c3', 'd5'],
+  // Ruy Lopez — Closed deeper
+  ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'a6', 'Ba4', 'Nf6', 'O-O', 'Be7', 'Re1', 'b5', 'Bb3', 'd6', 'c3', 'O-O', 'h3', 'Na5'],
+  ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'a6', 'Ba4', 'Nf6', 'O-O', 'Be7', 'Re1', 'b5', 'Bb3', 'd6', 'c3', 'Na5'],
+  // Sicilian — Accelerated & Hyperaccelerated Dragon
+  ['e4', 'c5', 'Nf3', 'Nc6', 'd4', 'cxd4', 'Nxd4', 'g6'],
+  ['e4', 'c5', 'Nf3', 'g6'],
+  // Sicilian — Four Knights
+  ['e4', 'c5', 'Nf3', 'e6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'Nc6'],
+  // Grand Prix Attack
+  ['e4', 'c5', 'Nc3', 'Nc6', 'f4', 'g6'],
+  ['e4', 'c5', 'Nc3', 'Nc6', 'f4', 'e6'],
+  // Najdorf — deeper Be3 English Attack
+  ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'a6', 'Be3', 'e5', 'Nb3', 'Be6'],
+  ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'a6', 'Bg5', 'e6', 'f4'],
+  // Dragon — Yugoslav
+  ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'g6', 'Be3', 'Bg7', 'f3', 'O-O', 'Qd2', 'Nc6'],
+  // Sveshnikov deeper
+  ['e4', 'c5', 'Nf3', 'Nc6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'e5', 'Ndb5', 'd6', 'Bg5', 'a6', 'Na3', 'b5'],
+  // French — Rubinstein
+  ['e4', 'e6', 'd4', 'd5', 'Nc3', 'dxe4', 'Nxe4'],
+  // French — Burn
+  ['e4', 'e6', 'd4', 'd5', 'Nc3', 'Nf6', 'Bg5', 'dxe4'],
+  // French — Steinitz
+  ['e4', 'e6', 'd4', 'd5', 'Nc3', 'Nf6', 'e5', 'Nfd7'],
+  // Caro-Kann — Two Knights
+  ['e4', 'c6', 'Nc3', 'd5', 'Nf3'],
+  ['e4', 'c6', 'Nf3', 'd5', 'Nc3'],
+  // Caro-Kann — Fantasy
+  ['e4', 'c6', 'd4', 'd5', 'f3'],
+  // Pirc — Austrian Attack
+  ['e4', 'd6', 'd4', 'Nf6', 'Nc3', 'g6', 'f4', 'Bg7'],
+  // Pirc — Classical
+  ['e4', 'd6', 'd4', 'Nf6', 'Nc3', 'g6', 'Nf3', 'Bg7', 'Be2'],
+  // Alekhine — Four Pawns
+  ['e4', 'Nf6', 'e5', 'Nd5', 'd4', 'd6', 'c4', 'Nb6', 'f4'],
+  ['e4', 'Nf6', 'e5', 'Nd5', 'd4', 'd6', 'Nf3'], // Modern
+  // Scandinavian — 3...Qd8
+  ['e4', 'd5', 'exd5', 'Qxd5', 'Nc3', 'Qd8'],
+  // Center Game / Danish
+  ['e4', 'e5', 'd4', 'exd4', 'Qxd4'],
+  ['e4', 'e5', 'd4', 'exd4', 'c3'], // Danish Gambit
+
+  // --- 1.d4 deeper ---
+  // QGD — Cambridge Springs
+  ['d4', 'd5', 'c4', 'e6', 'Nc3', 'Nf6', 'Bg5', 'Nbd7', 'Nf3', 'c6', 'e3', 'Qa5'],
+  // QGD — Lasker
+  ['d4', 'd5', 'c4', 'e6', 'Nc3', 'Nf6', 'Bg5', 'Be7', 'e3', 'O-O', 'Nf3', 'h6', 'Bh4', 'Ne4'],
+  // QGD — Tartakower
+  ['d4', 'd5', 'c4', 'e6', 'Nc3', 'Nf6', 'Bg5', 'Be7', 'e3', 'O-O', 'Nf3', 'h6', 'Bh4', 'b6'],
+  // Slav — Meran
+  ['d4', 'd5', 'c4', 'c6', 'Nf3', 'Nf6', 'Nc3', 'e6', 'e3', 'Nbd7', 'Bd3', 'dxc4', 'Bxc4', 'b5'],
+  // Slav — Classical
+  ['d4', 'd5', 'c4', 'c6', 'Nf3', 'Nf6', 'Nc3', 'dxc4', 'a4', 'Bf5'],
+  // Nimzo — 4.e3 Rubinstein
+  ['d4', 'Nf6', 'c4', 'e6', 'Nc3', 'Bb4', 'e3'],
+  ['d4', 'Nf6', 'c4', 'e6', 'Nc3', 'Bb4', 'e3', 'O-O', 'Bd3', 'd5'],
+  // Nimzo — 4.Qc2 Classical
+  ['d4', 'Nf6', 'c4', 'e6', 'Nc3', 'Bb4', 'Qc2'],
+  // Nimzo — 4.a3 Samisch
+  ['d4', 'Nf6', 'c4', 'e6', 'Nc3', 'Bb4', 'a3', 'Bxc3+', 'bxc3'],
+  // KID — Classical
+  ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'Bg7', 'e4', 'd6', 'Nf3', 'O-O', 'Be2'],
+  // KID — Samisch
+  ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'Bg7', 'e4', 'd6', 'f3'],
+  // KID — Four Pawns
+  ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'Bg7', 'e4', 'd6', 'f4'],
+  // KID — Fianchetto
+  ['d4', 'Nf6', 'c4', 'g6', 'g3'],
+  // Grunfeld — Exchange
+  ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'd5', 'cxd5', 'Nxd5', 'e4', 'Nxc3', 'bxc3'],
+  // Grunfeld — Russian
+  ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'd5', 'Nf3', 'Bg7', 'Qb3'],
+  // QID — Petrosian
+  ['d4', 'Nf6', 'c4', 'e6', 'Nf3', 'b6', 'a3'],
+  // Bogo-Indian
+  ['d4', 'Nf6', 'c4', 'e6', 'Nf3', 'Bb4+'],
+  // Modern Benoni — Main
+  ['d4', 'Nf6', 'c4', 'c5', 'd5', 'e6', 'Nc3', 'exd5', 'cxd5', 'd6'],
+  // Catalan — Open
+  ['d4', 'Nf6', 'c4', 'e6', 'g3', 'd5', 'Bg2', 'dxc4'],
+  // London deeper
+  ['d4', 'd5', 'Bf4', 'Nf6', 'e3', 'e6', 'Nf3', 'c5'],
+  ['d4', 'Nf6', 'Bf4', 'g6', 'Nf3', 'Bg7'],
+  // Torre Attack
+  ['d4', 'Nf6', 'Nf3', 'e6', 'Bg5'],
+  // Blackmar-Diemer
+  ['d4', 'd5', 'e4'],
+  ['d4', 'd5', 'e4', 'dxe4', 'Nc3', 'Nf6', 'f3'],
+  // Stonewall Attack
+  ['d4', 'd5', 'e3', 'Nf6', 'Bd3', 'c5', 'c3'],
+
+  // --- 1.c4 English deeper ---
+  ['c4', 'e5', 'Nc3', 'Nf6', 'g3'], // Botvinnik-style
+  ['c4', 'e5', 'Nc3', 'Nc6', 'Nf3'],
+  ['c4', 'Nf6', 'Nc3', 'e6', 'Nf3', 'd5'],
+  ['c4', 'c5', 'g3'], // Symmetrical fianchetto
+  ['c4', 'c5', 'Nc3', 'Nc6', 'g3', 'g6'],
+  ['c4', 'e6', 'Nc3', 'd5', 'd4'],
+  ['c4', 'c6', 'd4', 'd5'], // Slav move order
+  ['c4', 'g6', 'Nc3', 'Bg7', 'd4'],
+  ['c4', 'Nf6', 'Nc3', 'g6', 'e4'], // Great Snake
 ];
 
 /** Strip check / mate / annotation glyphs so user-played SAN matches book SAN. */
