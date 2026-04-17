@@ -101,6 +101,8 @@ export default function Page() {
   const [gameResult, setGameResult] = useState<string>('*');
   const [exportToast, setExportToast] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // null = live. 0..moves.length = reviewing that ply (0 = start position).
+  const [viewIndex, setViewIndex] = useState<number | null>(null);
 
   const chessRef = useRef<Chess>(new Chess());
   const playerEngineRef = useRef<Engine | null>(null);
@@ -423,6 +425,7 @@ export default function Page() {
       setFen(chessRef.current.fen());
       setMoves([]);
       setOverlay({});
+      setViewIndex(null);
       setLastClass(null);
       setLastLossCp(null);
       setWhiteEval(null);
@@ -520,9 +523,68 @@ export default function Page() {
     setTimeout(() => setExportToast(null), TOAST_MS);
   }, [moves, settings, gameResult]);
 
-  const boardDisabled = phase !== 'userTurn';
+  const reviewing = viewIndex !== null;
+  const boardDisabled = phase !== 'userTurn' || reviewing;
   const showEval = settings.evalOn;
   const evalForBar = useMemo(() => (showEval ? whiteEval : null), [showEval, whiteEval]);
+
+  // Scrubbed-to-history position: show the board at the reviewed ply. The
+  // live move handlers are disabled via `boardDisabled` so the user can't
+  // accidentally mutate the real game while browsing.
+  const displayFen = useMemo(() => {
+    if (viewIndex === null) return fen;
+    if (viewIndex === 0) return new Chess().fen();
+    return moves[viewIndex - 1]?.fenAfter ?? fen;
+  }, [viewIndex, fen, moves]);
+
+  const displayOverlay = useMemo<BoardOverlay>(() => {
+    if (viewIndex === null) return overlay;
+    if (viewIndex === 0) return {};
+    const m = moves[viewIndex - 1];
+    return m ? { lastMove: { from: m.from, to: m.to } } : {};
+  }, [viewIndex, overlay, moves]);
+
+  // Snap back to live whenever a new move is appended so the player isn't
+  // stranded in the past after the engine replies.
+  const lastLiveLenRef = useRef(moves.length);
+  useEffect(() => {
+    if (moves.length > lastLiveLenRef.current) setViewIndex(null);
+    lastLiveLenRef.current = moves.length;
+  }, [moves.length]);
+
+  // Arrow-key history navigation, chess.com style. Ignored while typing in a
+  // form control so sliders/selects keep their own keyboard behavior.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === 'ArrowLeft') {
+        setViewIndex((v) => {
+          const cur = v ?? moves.length;
+          return Math.max(0, cur - 1);
+        });
+        e.preventDefault();
+      } else if (e.key === 'ArrowRight') {
+        setViewIndex((v) => {
+          if (v === null) return null;
+          const next = v + 1;
+          return next >= moves.length ? null : next;
+        });
+        e.preventDefault();
+      } else if (e.key === 'ArrowUp' || e.key === 'Home') {
+        if (moves.length > 0) setViewIndex(0);
+        e.preventDefault();
+      } else if (e.key === 'ArrowDown' || e.key === 'End') {
+        setViewIndex(null);
+        e.preventDefault();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [moves.length]);
 
   const sidePanel = (
     <SidePanel
@@ -536,7 +598,7 @@ export default function Page() {
       moves={moves}
       lastClass={lastClass}
       lastLossCp={lastLossCp}
-      status={status}
+      status={reviewing ? `Reviewing ply ${viewIndex} — → to return` : status}
       exportToast={exportToast}
     />
   );
@@ -566,11 +628,11 @@ export default function Page() {
         >
           <Board
             ref={boardRef}
-            fen={fen}
+            fen={displayFen}
             userColor={settings.userColor}
             disabled={boardDisabled}
-            allowPremoves={settings.allowPremoves}
-            overlay={overlay}
+            allowPremoves={settings.allowPremoves && !reviewing}
+            overlay={displayOverlay}
             onDrop={onDrop}
             onSquareClick={onSquareClick}
             onPieceDragBegin={onPieceDragBegin}
