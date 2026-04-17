@@ -28,6 +28,10 @@ const HINT_MULTIPV = 6;
 const MAX_HINT_SQUARES = 3;
 const REVERT_HOLD_MS = 1400;
 const TOAST_MS = 1600;
+// Minimum visible "thinking" time for the engine. At low ELOs the search
+// returns almost instantly, which feels off — pad the move so it reads like
+// the engine is actually considering the position.
+const MIN_ENGINE_THINK_MS = 500;
 
 const DEFAULT_SETTINGS: GameSettings = {
   userColor: 'w',
@@ -40,6 +44,73 @@ const DEFAULT_SETTINGS: GameSettings = {
 
 function sideFromFen(fen: string): Color {
   return fen.split(' ')[1] === 'b' ? 'b' : 'w';
+}
+
+type Outcome = 'win' | 'loss' | 'draw';
+
+function gameOutcome(result: string, userColor: Color): Outcome {
+  if (result === '1/2-1/2') return 'draw';
+  if (result === '1-0') return userColor === 'w' ? 'win' : 'loss';
+  if (result === '0-1') return userColor === 'b' ? 'win' : 'loss';
+  return 'draw';
+}
+
+function GameOverOverlay({
+  label,
+  result,
+  outcome,
+  onNewGame,
+  onReview,
+  onExport,
+}: {
+  label: string;
+  result: string;
+  outcome: Outcome;
+  onNewGame: () => void;
+  onReview: () => void;
+  onExport: () => void;
+}) {
+  const accent =
+    outcome === 'win'
+      ? 'text-emerald-300'
+      : outcome === 'loss'
+        ? 'text-red-300'
+        : 'text-slate-200';
+  const headline = outcome === 'win' ? 'You won' : outcome === 'loss' ? 'You lost' : 'Draw';
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-black/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-xs rounded-xl border border-white/10 bg-panel p-5 text-center shadow-2xl">
+        <div className={`text-2xl font-bold ${accent}`}>{headline}</div>
+        <div className="mt-1 text-sm text-neutral-300">{label}</div>
+        <div className="mt-1 font-mono text-xs text-neutral-500">{result}</div>
+        <div className="mt-4 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={onNewGame}
+            className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-black hover:bg-accent/90"
+          >
+            New game
+          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onReview}
+              className="flex-1 rounded-md border border-white/10 px-3 py-2 text-xs hover:bg-white/5"
+            >
+              Review
+            </button>
+            <button
+              type="button"
+              onClick={onExport}
+              className="flex-1 rounded-md border border-white/10 px-3 py-2 text-xs hover:bg-white/5"
+            >
+              Export PGN
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -99,6 +170,8 @@ export default function Page() {
   const [lastClass, setLastClass] = useState<MoveClass | null>(null);
   const [lastLossCp, setLastLossCp] = useState<number | null>(null);
   const [gameResult, setGameResult] = useState<string>('*');
+  const [gameOverLabel, setGameOverLabel] = useState<string | null>(null);
+  const [gameOverDismissed, setGameOverDismissed] = useState(false);
   const [exportToast, setExportToast] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   // null = live. 0..moves.length = reviewing that ply (0 = start position).
@@ -205,6 +278,8 @@ export default function Page() {
     else if (c.isDraw()) label = 'Draw';
     setGameResult(result);
     setStatus(label);
+    setGameOverLabel(label);
+    setGameOverDismissed(false);
     setPhase('gameOver');
     return true;
   }, [settings.userColor]);
@@ -225,12 +300,18 @@ export default function Page() {
     const multipv = Math.min(6, inOpening ? Math.max(tier.multipv, 4) : tier.multipv);
     const randomCp = inOpening ? Math.max(tier.randomCp, 30) : tier.randomCp;
 
+    const startedAt = Date.now();
     const pvs = await engine.analyzeMulti(fenSnapshot, {
       depth: tier.depth,
       movetime: tier.movetime,
       multipv,
     });
     if (thisRun !== runIdRef.current) return;
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < MIN_ENGINE_THINK_MS) {
+      await new Promise((r) => setTimeout(r, MIN_ENGINE_THINK_MS - elapsed));
+      if (thisRun !== runIdRef.current) return;
+    }
     const pick = pickCandidate(pvs, randomCp);
     if (!pick) {
       checkGameOver();
@@ -430,6 +511,8 @@ export default function Page() {
       setLastLossCp(null);
       setWhiteEval(null);
       setGameResult('*');
+      setGameOverLabel(null);
+      setGameOverDismissed(false);
       preEvalRef.current = null;
       boardRef.current?.clearPremoves();
       setDrawerOpen(false);
@@ -639,6 +722,16 @@ export default function Page() {
             onPieceDragEnd={onPieceDragEnd}
             boardWidth={boardWidth}
           />
+          {phase === 'gameOver' && gameOverLabel && !gameOverDismissed && (
+            <GameOverOverlay
+              label={gameOverLabel}
+              result={gameResult}
+              outcome={gameOutcome(gameResult, settings.userColor)}
+              onNewGame={() => newGame(settings.userColor)}
+              onReview={() => setGameOverDismissed(true)}
+              onExport={handleExport}
+            />
+          )}
         </div>
       </div>
 
