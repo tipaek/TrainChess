@@ -215,11 +215,13 @@ export default function Page() {
     setStatus('Engine thinking…');
     const fenSnapshot = chessRef.current.fen();
     const tier = strengthForElo(settings.elo);
-    // Widen the candidate pool in the opening so games don't all look the same.
+    // Widen the candidate pool in the opening so games don't all look the
+    // same — but stay within a small cp tolerance so we're still picking
+    // among engine-approved moves, not playing random stuff.
     const plies = chessRef.current.history().length;
-    const inOpening = plies < 14;
-    const multipv = Math.min(8, inOpening ? Math.max(tier.multipv, 5) : tier.multipv);
-    const randomCp = inOpening ? Math.max(tier.randomCp, 35) : tier.randomCp;
+    const inOpening = plies < 12;
+    const multipv = Math.min(6, inOpening ? Math.max(tier.multipv, 4) : tier.multipv);
+    const randomCp = inOpening ? Math.max(tier.randomCp, 30) : tier.randomCp;
 
     const pvs = await engine.analyzeMulti(fenSnapshot, {
       depth: tier.depth,
