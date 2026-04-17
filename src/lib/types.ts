@@ -23,6 +23,8 @@ export interface EngineEval {
   mate: number | null;
   /** UCI string of the best move the engine returned. */
   bestMove: string | null;
+  /** Full principal variation (UCI moves) starting with bestMove. */
+  pv: string[];
 }
 
 export interface EnginePv extends EngineEval {

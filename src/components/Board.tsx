@@ -12,7 +12,10 @@ export interface BoardOverlay {
   lastMove?: { from: string; to: string };
   badMove?: { from: string; to: string };
   hintSquares?: string[];
-  opponentArrow?: { from: string; to: string };
+  /** Engine's planned continuation after a bad user move. Index 0 is the
+   *  immediate refutation; later entries are follow-ups the engine intends to
+   *  play. Drawn as a fading sequence of arrows. */
+  opponentPlan?: { from: string; to: string }[];
   selected?: string;
   legalDests?: { square: string; capture: boolean }[];
 }
@@ -36,6 +39,9 @@ const HINT_RING = 'inset 0 0 0 4px rgba(59, 130, 246, 0.9)';
 const HINT_BG = 'rgba(59, 130, 246, 0.25)';
 const SELECTED_BG = 'rgba(255, 230, 130, 0.45)';
 const OPP_ARROW_COLOR = '#f97316';
+// Alpha-graded orange so successive arrows in the engine's plan fade out;
+// stronger for the immediate refutation, weaker as you read further ahead.
+const OPP_PLAN_COLORS = ['#f97316ff', '#f97316cc', '#f9731699', '#f9731666'];
 const LEGAL_DOT =
   'radial-gradient(circle, rgba(0,0,0,0.28) 20%, rgba(0,0,0,0) 22%)';
 const LEGAL_CAPTURE =
@@ -94,9 +100,12 @@ export const Board = forwardRef<BoardRef, BoardProps>(function Board(
     }
   }
 
-  const arrows: Array<[Square, Square, string?]> = overlay.opponentArrow
-    ? [[overlay.opponentArrow.from as Square, overlay.opponentArrow.to as Square, OPP_ARROW_COLOR]]
-    : [];
+  const arrows: Array<[Square, Square, string?]> =
+    overlay.opponentPlan?.map((m, i) => [
+      m.from as Square,
+      m.to as Square,
+      OPP_PLAN_COLORS[Math.min(i, OPP_PLAN_COLORS.length - 1)],
+    ]) ?? [];
 
   return (
     <Chessboard

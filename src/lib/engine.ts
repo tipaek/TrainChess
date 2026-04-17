@@ -149,13 +149,14 @@ class Engine {
               cp: v.cp,
               mate: v.mate,
               bestMove: v.pv[0] ?? null,
+              pv: v.pv,
             };
           });
           // Guarantee at least the bestmove line even if no info arrived.
           if (pvs.length === 0) {
             const m = line.match(/^bestmove\s+(\S+)/);
             const bestMove = m && m[1] !== '(none)' ? m[1] : null;
-            pvs.push({ rank: 1, cp: null, mate: null, bestMove });
+            pvs.push({ rank: 1, cp: null, mate: null, bestMove, pv: bestMove ? [bestMove] : [] });
           }
           resolve(pvs);
         }

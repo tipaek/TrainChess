@@ -43,6 +43,36 @@ function sideFromFen(fen: string): Color {
 }
 
 /**
+ * Convert the first `maxMoves` UCI moves of a principal variation into
+ * from/to arrow pairs by replaying them on a scratch board. Stops early if a
+ * move is malformed or illegal.
+ */
+function planArrows(
+  fen: string,
+  pv: string[] | undefined,
+  maxMoves: number,
+): { from: string; to: string }[] {
+  if (!pv || pv.length === 0) return [];
+  const scratch = new Chess(fen);
+  const out: { from: string; to: string }[] = [];
+  for (let i = 0; i < Math.min(maxMoves, pv.length); i++) {
+    const uci = pv[i];
+    if (!uci || uci.length < 4) break;
+    const from = uci.slice(0, 2);
+    const to = uci.slice(2, 4);
+    const promotion = uci.length > 4 ? uci.slice(4, 5) : undefined;
+    try {
+      const played = scratch.move({ from, to, promotion });
+      if (!played) break;
+      out.push({ from: played.from, to: played.to });
+    } catch {
+      break;
+    }
+  }
+  return out;
+}
+
+/**
  * Pick one of the top candidate PVs at random among those within `tolCp` of
  * the best score. Returns its UCI string, or null if no candidates exist.
  */
@@ -288,7 +318,7 @@ export default function Page() {
         const [prePvs, post] = await Promise.all([prePromise, postPromise]);
         if (thisRun !== runIdRef.current) return;
 
-        const pre = prePvs[0] ?? { cp: null, mate: null, bestMove: null };
+        const pre = prePvs[0] ?? { cp: null, mate: null, bestMove: null, pv: [] };
         const classified = classifyMove(pre, post, playedUci);
         const cls: MoveClass = inBook ? 'book' : classified.cls;
         const lossCp = classified.lossCp;
@@ -298,16 +328,14 @@ export default function Page() {
 
         if (shouldRevert(cls, settings.revertAt)) {
           setStatus(`${cls[0].toUpperCase() + cls.slice(1)} — try again`);
-          // Show engine's best refutation from the position AFTER the bad move.
-          const oppUci = post.bestMove;
-          const arrow =
-            oppUci && oppUci.length >= 4
-              ? { from: oppUci.slice(0, 2), to: oppUci.slice(2, 4) }
-              : undefined;
+          // Show the engine's planned continuation from the position AFTER the
+          // bad move — up to four plies, so the player sees the refutation
+          // plus the next couple of moves in the plan.
+          const plan = planArrows(fenAfter, post.pv, 4);
           setOverlay({
             lastMove: { from: move.from, to: move.to },
             badMove: { from: move.from, to: move.to },
-            opponentArrow: arrow,
+            opponentPlan: plan,
           });
           setPhase('reverting');
           // A queued premove no longer corresponds to the same situation after revert.
