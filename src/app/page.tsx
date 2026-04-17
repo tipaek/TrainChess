@@ -320,11 +320,23 @@ export default function Page() {
     const from = pick.slice(0, 2);
     const to = pick.slice(2, 4);
     const promotion = pick.length > 4 ? pick.slice(4, 5) : undefined;
+    const fenBeforeEngine = chessRef.current.fen();
+    let engineMove;
     try {
-      chessRef.current.move({ from, to, promotion });
+      engineMove = chessRef.current.move({ from, to, promotion });
     } catch {
       return;
     }
+    const fenAfterEngine = chessRef.current.fen();
+    const enginePlayed: PlayedMove = {
+      san: engineMove.san,
+      from: engineMove.from,
+      to: engineMove.to,
+      fenBefore: fenBeforeEngine,
+      fenAfter: fenAfterEngine,
+      moverColor: settings.userColor === 'w' ? 'b' : 'w',
+    };
+    setMoves((m) => [...m, enginePlayed]);
     updateBoard();
     setOverlay({ lastMove: { from, to } });
     if (checkGameOver()) return;
@@ -592,7 +604,7 @@ export default function Page() {
   const handleExport = useCallback(async () => {
     const snapshot = new Chess();
     for (const m of moves) {
-      snapshot.move({ from: m.from, to: m.to, promotion: 'q' });
+      snapshot.move(m.san);
     }
     const result = gameResult !== '*' ? gameResult : '*';
     const pgn = buildPgn(snapshot, settings, result);
