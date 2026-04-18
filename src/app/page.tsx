@@ -113,34 +113,88 @@ function GameOverOverlay({
   );
 }
 
+// Arrow colors follow chess.com/lichess conventions: green for what the user
+// should have played, red for forcing moves (captures / checks) in the
+// engine's reply, orange for quiet plan continuations. Trailing hex byte is
+// alpha so deeper plies fade out.
+const ARROW_BEST = '#16a34a';
+const ARROW_FORCE = '#dc2626';
+const ARROW_PLAN = '#f97316';
+
+type ColoredArrow = { from: string; to: string; color: string };
+
+function fadeHex(i: number): string {
+  const alpha = Math.max(0x60, 0xff - i * 0x30);
+  return alpha.toString(16).padStart(2, '0');
+}
+
 /**
- * Convert the first `maxMoves` UCI moves of a principal variation into
- * from/to arrow pairs by replaying them on a scratch board. Stops early if a
- * move is malformed or illegal.
+ * Replay up to `maxMoves` UCI plies of a PV on a scratch board and return
+ * colored arrows — red for forcing moves (capture or check), orange for quiet
+ * continuations. Later plies fade alpha so the immediate reply reads
+ * strongest.
  */
-function planArrows(
+function describedPlanArrows(
   fen: string,
   pv: string[] | undefined,
   maxMoves: number,
-): { from: string; to: string }[] {
+): ColoredArrow[] {
   if (!pv || pv.length === 0) return [];
   const scratch = new Chess(fen);
-  const out: { from: string; to: string }[] = [];
+  const out: ColoredArrow[] = [];
   for (let i = 0; i < Math.min(maxMoves, pv.length); i++) {
     const uci = pv[i];
     if (!uci || uci.length < 4) break;
     const from = uci.slice(0, 2);
     const to = uci.slice(2, 4);
     const promotion = uci.length > 4 ? uci.slice(4, 5) : undefined;
+    let played;
     try {
-      const played = scratch.move({ from, to, promotion });
-      if (!played) break;
-      out.push({ from: played.from, to: played.to });
+      played = scratch.move({ from, to, promotion });
     } catch {
       break;
     }
+    if (!played) break;
+    const forcing = Boolean(played.captured) || scratch.inCheck();
+    const base = forcing ? ARROW_FORCE : ARROW_PLAN;
+    out.push({ from: played.from, to: played.to, color: `${base}${fadeHex(i)}` });
   }
   return out;
+}
+
+/** Green "you should have played this" arrow anchored at `fen`. */
+function bestMoveArrow(fen: string, bestUci: string | null | undefined): ColoredArrow | null {
+  if (!bestUci || bestUci.length < 4) return null;
+  const from = bestUci.slice(0, 2);
+  const to = bestUci.slice(2, 4);
+  const promotion = bestUci.length > 4 ? bestUci.slice(4, 5) : undefined;
+  const scratch = new Chess(fen);
+  try {
+    const played = scratch.move({ from, to, promotion });
+    if (!played) return null;
+    return { from: played.from, to: played.to, color: ARROW_BEST };
+  } catch {
+    return null;
+  }
+}
+
+function reviewArrows(
+  fenBefore: string,
+  fenAfter: string,
+  bestUci: string | null | undefined,
+  punishmentPv: string[] | undefined,
+  playedFrom: string,
+  playedTo: string,
+): ColoredArrow[] {
+  const arrows: ColoredArrow[] = [];
+  const best = bestMoveArrow(fenBefore, bestUci);
+  // Suppress the green arrow when it would duplicate the move the user actually
+  // played (shouldn't happen for bad moves but be defensive).
+  if (best && !(best.from === playedFrom && best.to === playedTo)) {
+    arrows.push(best);
+  }
+  arrows.push(...describedPlanArrows(fenAfter, punishmentPv, 4));
+  return arrows;
 }
 
 /**
@@ -426,13 +480,20 @@ export default function Page() {
         if (shouldRevert(cls, settings.revertAt)) {
           setStatus(`${cls[0].toUpperCase() + cls.slice(1)} — try again`);
           // Show the engine's planned continuation from the position AFTER the
-          // bad move — up to four plies, so the player sees the refutation
-          // plus the next couple of moves in the plan.
-          const plan = planArrows(fenAfter, post.pv, 4);
+          // bad move plus a green "should have played" arrow from the position
+          // BEFORE, so the player sees both the refutation and the missed move.
+          const arrows = reviewArrows(
+            fenBefore,
+            fenAfter,
+            pre.bestMove,
+            post.pv,
+            move.from,
+            move.to,
+          );
           setOverlay({
             lastMove: { from: move.from, to: move.to },
             badMove: { from: move.from, to: move.to },
-            opponentPlan: plan,
+            arrows,
           });
           setPhase('reverting');
           // A queued premove no longer corresponds to the same situation after revert.
@@ -450,6 +511,8 @@ export default function Page() {
           return;
         }
 
+        const badForReview =
+          cls === 'inaccuracy' || cls === 'mistake' || cls === 'blunder';
         const played: PlayedMove = {
           san: move.san,
           from: move.from,
@@ -459,6 +522,9 @@ export default function Page() {
           moverColor: settings.userColor,
           moveClass: cls,
           lossCp,
+          analysis: badForReview
+            ? { bestMoveUci: pre.bestMove, punishmentPv: post.pv }
+            : undefined,
         };
         setMoves((m) => [...m, played]);
 
@@ -636,8 +702,21 @@ export default function Page() {
     if (viewIndex === null) return overlay;
     if (viewIndex === 0) return {};
     const m = moves[viewIndex - 1];
-    return m ? { lastMove: { from: m.from, to: m.to } } : {};
-  }, [viewIndex, overlay, moves]);
+    if (!m) return {};
+    const base: BoardOverlay = { lastMove: { from: m.from, to: m.to } };
+    if (m.analysis && m.moverColor === settings.userColor) {
+      base.badMove = { from: m.from, to: m.to };
+      base.arrows = reviewArrows(
+        m.fenBefore,
+        m.fenAfter,
+        m.analysis.bestMoveUci,
+        m.analysis.punishmentPv,
+        m.from,
+        m.to,
+      );
+    }
+    return base;
+  }, [viewIndex, overlay, moves, settings.userColor]);
 
   // Snap back to live whenever a new move is appended so the player isn't
   // stranded in the past after the engine replies.
@@ -718,8 +797,12 @@ export default function Page() {
       <div className="flex min-h-0 flex-1 items-center justify-center">
         <div
           ref={boardWrapperRef}
-          className="relative aspect-square w-full max-w-full md:max-h-full md:max-w-full"
-          style={{ maxHeight: '100%' }}
+          className="relative aspect-square w-full max-w-full select-none md:max-h-full md:max-w-full"
+          style={{
+            maxHeight: '100%',
+            WebkitUserSelect: 'none',
+            WebkitTouchCallout: 'none',
+          }}
         >
           <Board
             ref={boardRef}

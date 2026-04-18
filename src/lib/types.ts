@@ -47,6 +47,13 @@ export interface PlayedMove {
   moverColor: Color;
   moveClass?: MoveClass;
   lossCp?: number;
+  /** Engine analysis captured at move time so reviewing a bad move later can
+   *  redraw the explanatory arrows (green best-move + red/orange punishment
+   *  PV) without re-running the engine. */
+  analysis?: {
+    bestMoveUci?: string | null;
+    punishmentPv?: string[];
+  };
 }
 
 export interface GameSettings {
