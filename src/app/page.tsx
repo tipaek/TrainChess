@@ -24,10 +24,8 @@ type Phase = 'idle' | 'userTurn' | 'classifying' | 'engineTurn' | 'reverting' | 
 
 const CLASSIFY_DEPTH = 14;
 const HINT_DEPTH = 14;
-const EVAL_DEPTH = 14;
 const HINT_MULTIPV = 6;
 const MAX_HINT_SQUARES = 3;
-const REVERT_HOLD_MS = 1400;
 const TOAST_MS = 1600;
 // Minimum visible "thinking" time for the engine. At low ELOs the search
 // returns almost instantly, which feels off — pad the move so it reads like
@@ -114,11 +112,48 @@ function GameOverOverlay({
   );
 }
 
-// Arrow colors follow chess.com/lichess conventions: green for what the user
-// should have played, red for forcing moves (captures / checks) in the
-// engine's reply, orange for quiet plan continuations. Trailing hex byte is
-// alpha so deeper plies fade out.
-const ARROW_BEST = '#16a34a';
+interface RevertContext {
+  fenBefore: string;
+  prePvs: EnginePv[];
+  review: ReviewLines;
+}
+
+function RevertOverlay({
+  review,
+  onTryAgain,
+}: {
+  review: ReviewLines;
+  onTryAgain: () => void;
+}) {
+  return (
+    <div className="absolute bottom-3 left-1/2 z-10 w-[92%] max-w-sm -translate-x-1/2">
+      <div className="rounded-lg border border-white/10 bg-panel/95 p-3 text-center shadow-xl backdrop-blur-sm">
+        <div className={`text-sm font-semibold ${review.playedClass === 'blunder' ? 'text-red-300' : review.playedClass === 'mistake' ? 'text-orange-300' : 'text-amber-300'}`}>
+          {review.playedClass[0].toUpperCase() + review.playedClass.slice(1)}
+          {review.lossCp !== undefined && review.lossCp > 0 && (
+            <span className="ml-1 text-xs text-neutral-400">(-{review.lossCp}cp)</span>
+          )}
+        </div>
+        {review.engineLine && (
+          <div className="mt-1 truncate font-mono text-xs text-neutral-300">
+            {review.engineLine}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onTryAgain}
+          className="mt-2 rounded-md bg-accent px-4 py-1.5 text-xs font-semibold text-black hover:bg-accent/90"
+        >
+          Try again
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Arrow colors: red for forcing moves (captures / checks) in the engine's
+// reply, orange for quiet plan continuations. Trailing hex byte is alpha so
+// deeper plies fade out.
 const ARROW_FORCE = '#dc2626';
 const ARROW_PLAN = '#f97316';
 
@@ -163,22 +198,6 @@ function describedPlanArrows(
   return out;
 }
 
-/** Green "you should have played this" arrow anchored at `fen`. */
-function bestMoveArrow(fen: string, bestUci: string | null | undefined): ColoredArrow | null {
-  if (!bestUci || bestUci.length < 4) return null;
-  const from = bestUci.slice(0, 2);
-  const to = bestUci.slice(2, 4);
-  const promotion = bestUci.length > 4 ? bestUci.slice(4, 5) : undefined;
-  const scratch = new Chess(fen);
-  try {
-    const played = scratch.move({ from, to, promotion });
-    if (!played) return null;
-    return { from: played.from, to: played.to, color: ARROW_BEST };
-  } catch {
-    return null;
-  }
-}
-
 /** Convert the first `max` UCI plies of a PV into SAN by replaying on
  *  a scratch chess.js instance anchored at `fen`. */
 function pvToSan(fen: string, pv: string[] | undefined, max: number): string[] {
@@ -202,38 +221,26 @@ function pvToSan(fen: string, pv: string[] | undefined, max: number): string[] {
   return sans;
 }
 
-function bestMoveSan(fen: string, uci: string | null | undefined): string | undefined {
-  if (!uci || uci.length < 4) return undefined;
-  const scratch = new Chess(fen);
-  try {
-    const played = scratch.move({
-      from: uci.slice(0, 2),
-      to: uci.slice(2, 4),
-      promotion: uci.length > 4 ? uci.slice(4, 5) : undefined,
-    });
-    return played?.san;
-  } catch {
-    return undefined;
+/** Format SAN array with PGN-style move numbers based on the FEN's turn/number. */
+function formatEngineLine(fen: string, sans: string[]): string {
+  if (sans.length === 0) return '';
+  const parts = fen.split(' ');
+  const startWhite = parts[1] !== 'b';
+  let moveNum = parseInt(parts[5]) || 1;
+  let isWhite = startWhite;
+  const tokens: string[] = [];
+  for (let i = 0; i < sans.length; i++) {
+    if (isWhite) {
+      tokens.push(`${moveNum}.\u2009${sans[i]}`);
+    } else if (i === 0) {
+      tokens.push(`${moveNum}...\u2009${sans[i]}`);
+    } else {
+      tokens.push(sans[i]);
+    }
+    if (!isWhite) moveNum++;
+    isWhite = !isWhite;
   }
-}
-
-function reviewArrows(
-  fenBefore: string,
-  fenAfter: string,
-  bestUci: string | null | undefined,
-  punishmentPv: string[] | undefined,
-  playedFrom: string,
-  playedTo: string,
-): ColoredArrow[] {
-  const arrows: ColoredArrow[] = [];
-  const best = bestMoveArrow(fenBefore, bestUci);
-  // Suppress the green arrow when it would duplicate the move the user actually
-  // played (shouldn't happen for bad moves but be defensive).
-  if (best && !(best.from === playedFrom && best.to === playedTo)) {
-    arrows.push(best);
-  }
-  arrows.push(...describedPlanArrows(fenAfter, punishmentPv, 4));
-  return arrows;
+  return tokens.join(' ');
 }
 
 /**
@@ -269,6 +276,7 @@ export default function Page() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // null = live. 0..moves.length = reviewing that ply (0 = start position).
   const [viewIndex, setViewIndex] = useState<number | null>(null);
+  const [revertCtx, setRevertCtx] = useState<RevertContext | null>(null);
 
   const chessRef = useRef<Chess>(new Chess());
   const playerEngineRef = useRef<Engine | null>(null);
@@ -517,36 +525,26 @@ export default function Page() {
         applyWhiteEval({ ...post, rank: 1 }, afterStm);
 
         if (shouldRevert(cls, settings.revertAt)) {
-          setStatus(`${cls[0].toUpperCase() + cls.slice(1)} — try again`);
-          // Show the engine's planned continuation from the position AFTER the
-          // bad move plus a green "should have played" arrow from the position
-          // BEFORE, so the player sees both the refutation and the missed move.
-          const arrows = reviewArrows(
-            fenBefore,
-            fenAfter,
-            pre.bestMove,
-            post.pv,
-            move.from,
-            move.to,
-          );
+          setStatus(`${cls[0].toUpperCase() + cls.slice(1)} — study the arrows, then try again`);
+          const arrows = describedPlanArrows(fenAfter, post.pv, 4);
           setOverlay({
             lastMove: { from: move.from, to: move.to },
             badMove: { from: move.from, to: move.to },
             arrows,
           });
+          const punishmentSan = pvToSan(fenAfter, post.pv, 5);
+          setRevertCtx({
+            fenBefore,
+            prePvs,
+            review: {
+              playedSan: move.san,
+              playedClass: cls,
+              lossCp,
+              engineLine: formatEngineLine(fenAfter, punishmentSan),
+            },
+          });
           setPhase('reverting');
-          // A queued premove no longer corresponds to the same situation after revert.
           boardRef.current?.clearPremoves();
-
-          await new Promise((r) => setTimeout(r, REVERT_HOLD_MS));
-          if (thisRun !== runIdRef.current) return;
-          chessRef.current.undo();
-          updateBoard();
-          setOverlay({});
-          preEvalRef.current = { fen: fenBefore, pvs: prePvs };
-          if (prePvs[0]) applyWhiteEval(prePvs[0], sideFromFen(fenBefore));
-          setPhase('userTurn');
-          setStatus('Your move');
           return;
         }
 
@@ -630,6 +628,7 @@ export default function Page() {
       setGameResult('*');
       setGameOverLabel(null);
       setGameOverDismissed(false);
+      setRevertCtx(null);
       preEvalRef.current = null;
       boardRef.current?.clearPremoves();
       setDrawerOpen(false);
@@ -722,6 +721,19 @@ export default function Page() {
     setTimeout(() => setExportToast(null), TOAST_MS);
   }, [moves, settings, gameResult]);
 
+  const handleTryAgain = useCallback(() => {
+    if (!revertCtx) return;
+    chessRef.current.undo();
+    updateBoard();
+    setOverlay({});
+    preEvalRef.current = { fen: revertCtx.fenBefore, pvs: revertCtx.prePvs };
+    if (revertCtx.prePvs[0])
+      applyWhiteEval(revertCtx.prePvs[0], sideFromFen(revertCtx.fenBefore));
+    setRevertCtx(null);
+    setPhase('userTurn');
+    setStatus('Your move');
+  }, [revertCtx, updateBoard, applyWhiteEval]);
+
   const isUserMistake = useCallback(
     (m: PlayedMove) =>
       m.moverColor === settings.userColor &&
@@ -759,6 +771,28 @@ export default function Page() {
 
   const goLive = useCallback(() => setViewIndex(null), []);
 
+  const goPrevMove = useCallback(() => {
+    if (phase === 'reverting') return;
+    setViewIndex((v) => {
+      const cur = v ?? moves.length;
+      return Math.max(0, cur - 1);
+    });
+  }, [moves.length, phase]);
+
+  const goNextMove = useCallback(() => {
+    if (phase === 'reverting') return;
+    setViewIndex((v) => {
+      if (v === null) return null;
+      const next = v + 1;
+      return next >= moves.length ? null : next;
+    });
+  }, [moves.length, phase]);
+
+  const goToStart = useCallback(() => {
+    if (phase === 'reverting') return;
+    if (moves.length > 0) setViewIndex(0);
+  }, [moves.length, phase]);
+
   const handleMoveClick = useCallback(
     (ply: number) => {
       if (ply >= moves.length) setViewIndex(null);
@@ -768,18 +802,19 @@ export default function Page() {
   );
 
   const review = useMemo<ReviewLines | null>(() => {
+    if (revertCtx) return revertCtx.review;
     if (viewIndex === null || viewIndex === 0) return null;
     const m = moves[viewIndex - 1];
     if (!m || !m.moveClass || m.moverColor !== settings.userColor) return null;
     if (!m.analysis) return null;
+    const punishmentSan = pvToSan(m.fenAfter, m.analysis.punishmentPv, 5);
     return {
       playedSan: m.san,
       playedClass: m.moveClass,
       lossCp: m.lossCp,
-      bestSan: bestMoveSan(m.fenBefore, m.analysis.bestMoveUci),
-      punishmentSan: pvToSan(m.fenAfter, m.analysis.punishmentPv, 5),
+      engineLine: formatEngineLine(m.fenAfter, punishmentSan),
     };
-  }, [viewIndex, moves, settings.userColor]);
+  }, [revertCtx, viewIndex, moves, settings.userColor]);
 
   const reviewing = viewIndex !== null;
   const boardDisabled = phase !== 'userTurn' || reviewing;
@@ -803,14 +838,7 @@ export default function Page() {
     const base: BoardOverlay = { lastMove: { from: m.from, to: m.to } };
     if (m.analysis && m.moverColor === settings.userColor) {
       base.badMove = { from: m.from, to: m.to };
-      base.arrows = reviewArrows(
-        m.fenBefore,
-        m.fenAfter,
-        m.analysis.bestMoveUci,
-        m.analysis.punishmentPv,
-        m.from,
-        m.to,
-      );
+      base.arrows = describedPlanArrows(m.fenAfter, m.analysis.punishmentPv, 4);
     }
     return base;
   }, [viewIndex, overlay, moves, settings.userColor]);
@@ -827,6 +855,7 @@ export default function Page() {
   // form control so sliders/selects keep their own keyboard behavior.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (phase === 'reverting') return;
       const t = e.target as HTMLElement | null;
       const tag = t?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
@@ -855,7 +884,7 @@ export default function Page() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [moves.length]);
+  }, [moves.length, phase]);
 
   const sidePanel = (
     <SidePanel
@@ -921,6 +950,9 @@ export default function Page() {
             onPieceDragEnd={onPieceDragEnd}
             boardWidth={boardWidth}
           />
+          {phase === 'reverting' && revertCtx && (
+            <RevertOverlay review={revertCtx.review} onTryAgain={handleTryAgain} />
+          )}
           {phase === 'gameOver' && gameOverLabel && !gameOverDismissed && (
             <GameOverOverlay
               label={gameOverLabel}
@@ -932,6 +964,46 @@ export default function Page() {
             />
           )}
         </div>
+      </div>
+
+      {/* Mobile move navigation */}
+      <div className="flex items-center justify-center gap-1 md:hidden">
+        <button
+          type="button"
+          onClick={goToStart}
+          disabled={phase === 'reverting' || moves.length === 0}
+          className="rounded-md border border-white/10 bg-panelAlt/60 px-3 py-1.5 text-sm disabled:opacity-30"
+          aria-label="Go to start"
+        >
+          ⏮
+        </button>
+        <button
+          type="button"
+          onClick={goPrevMove}
+          disabled={phase === 'reverting' || moves.length === 0}
+          className="rounded-md border border-white/10 bg-panelAlt/60 px-4 py-1.5 text-sm disabled:opacity-30"
+          aria-label="Previous move"
+        >
+          ◀
+        </button>
+        <button
+          type="button"
+          onClick={goNextMove}
+          disabled={phase === 'reverting' || viewIndex === null}
+          className="rounded-md border border-white/10 bg-panelAlt/60 px-4 py-1.5 text-sm disabled:opacity-30"
+          aria-label="Next move"
+        >
+          ▶
+        </button>
+        <button
+          type="button"
+          onClick={goLive}
+          disabled={phase === 'reverting' || viewIndex === null}
+          className="rounded-md border border-white/10 bg-panelAlt/60 px-3 py-1.5 text-sm disabled:opacity-30"
+          aria-label="Go to live position"
+        >
+          ⏭
+        </button>
       </div>
 
       {/* Mobile bottom action bar */}

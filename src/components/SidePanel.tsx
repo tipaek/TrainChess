@@ -15,8 +15,7 @@ export interface ReviewLines {
   playedSan: string;
   playedClass: MoveClass;
   lossCp?: number;
-  bestSan?: string;
-  punishmentSan?: string[];
+  engineLine: string;
 }
 
 interface SidePanelProps {
@@ -251,7 +250,7 @@ export function SidePanel(props: SidePanelProps) {
 }
 
 function ReviewCard({ review }: { review: ReviewLines }) {
-  const { playedSan, playedClass, lossCp, bestSan, punishmentSan } = review;
+  const { playedSan, playedClass, lossCp, engineLine } = review;
   return (
     <div className="space-y-1.5 rounded-md border border-amber-400/30 bg-amber-500/5 px-3 py-2 text-xs">
       <div className="flex items-center justify-between">
@@ -267,18 +266,10 @@ function ReviewCard({ review }: { review: ReviewLines }) {
         <span className="text-neutral-400">You played</span>
         <span className={`font-mono ${classColor(playedClass)}`}>{playedSan}</span>
       </div>
-      {bestSan && (
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-neutral-400">Best was</span>
-          <span className="font-mono text-emerald-300">{bestSan}</span>
-        </div>
-      )}
-      {punishmentSan && punishmentSan.length > 0 && (
+      {engineLine && (
         <div>
           <div className="text-neutral-400">Engine line</div>
-          <div className="mt-0.5 font-mono text-neutral-200">
-            {punishmentSan.join(' ')}
-          </div>
+          <div className="mt-0.5 font-mono text-neutral-200">{engineLine}</div>
         </div>
       )}
     </div>
