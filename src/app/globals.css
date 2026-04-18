@@ -25,3 +25,16 @@ body {
 input[type='range'] {
   cursor: pointer;
 }
+
+/* react-chessboard renders pieces as <img> inside draggable containers. Some
+ * browsers start a native text/image selection when you mousedown on them,
+ * which ends up highlighting pieces or surrounding text while you drag. Kill
+ * selection + touch callout inside the board wrapper. */
+.select-none,
+.select-none * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

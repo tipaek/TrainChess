@@ -11,6 +11,13 @@ import type {
 import { classColor, classLabel } from '@/lib/classify';
 import { MoveList } from './MoveList';
 
+export interface ReviewLines {
+  playedSan: string;
+  playedClass: MoveClass;
+  lossCp?: number;
+  engineLine: string;
+}
+
 interface SidePanelProps {
   settings: GameSettings;
   onSettingsChange: (next: GameSettings) => void;
@@ -24,6 +31,13 @@ interface SidePanelProps {
   lastLossCp: number | null;
   status: string;
   exportToast: string | null;
+  viewIndex: number | null;
+  onMoveClick: (index: number) => void;
+  onPrevMistake: () => void;
+  onNextMistake: () => void;
+  onReturnLive: () => void;
+  hasMistakes: boolean;
+  review: ReviewLines | null;
 }
 
 export function SidePanel(props: SidePanelProps) {
@@ -40,6 +54,13 @@ export function SidePanel(props: SidePanelProps) {
     lastLossCp,
     status,
     exportToast,
+    viewIndex,
+    onMoveClick,
+    onPrevMistake,
+    onNextMistake,
+    onReturnLive,
+    hasMistakes,
+    review,
   } = props;
 
   const update = <K extends keyof GameSettings>(key: K, value: GameSettings[K]) => {
@@ -47,7 +68,7 @@ export function SidePanel(props: SidePanelProps) {
   };
 
   return (
-    <aside className="flex h-full w-full flex-col gap-3 rounded-xl bg-panel p-4 text-sm shadow-xl">
+    <aside className="flex h-full w-full select-none flex-col gap-3 rounded-xl bg-panel p-4 text-sm shadow-xl">
       <div>
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">TrainChess</h1>
@@ -160,7 +181,7 @@ export function SidePanel(props: SidePanelProps) {
             disabled={moves.length === 0}
             className="w-full rounded-md border border-white/10 px-3 py-2 text-xs hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Export PGN
+            Copy PGN
           </button>
           {exportToast && (
             <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-black shadow">
@@ -169,6 +190,41 @@ export function SidePanel(props: SidePanelProps) {
           )}
         </div>
       </div>
+
+      {/* Review navigation: prev/next mistake + back-to-live */}
+      {(hasMistakes || viewIndex !== null) && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onPrevMistake}
+            disabled={!hasMistakes}
+            className="flex-1 rounded-md border border-white/10 bg-panelAlt/60 px-2 py-1.5 text-[11px] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Previous mistake"
+          >
+            ← Prev mistake
+          </button>
+          <button
+            type="button"
+            onClick={onNextMistake}
+            disabled={!hasMistakes || viewIndex === null}
+            className="flex-1 rounded-md border border-white/10 bg-panelAlt/60 px-2 py-1.5 text-[11px] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Next mistake"
+          >
+            Next mistake →
+          </button>
+          <button
+            type="button"
+            onClick={onReturnLive}
+            disabled={viewIndex === null}
+            className="rounded-md border border-white/10 bg-panelAlt/60 px-2 py-1.5 text-[11px] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Return to live position"
+          >
+            Live
+          </button>
+        </div>
+      )}
+
+      {review && <ReviewCard review={review} />}
 
       <div className="rounded-md border border-white/10 bg-panelAlt/60 px-3 py-2 text-xs">
         <div className="flex items-center justify-between">
@@ -188,8 +244,35 @@ export function SidePanel(props: SidePanelProps) {
         )}
       </div>
 
-      <MoveList moves={moves} />
+      <MoveList moves={moves} viewIndex={viewIndex} onMoveClick={onMoveClick} />
     </aside>
+  );
+}
+
+function ReviewCard({ review }: { review: ReviewLines }) {
+  const { playedSan, playedClass, lossCp, engineLine } = review;
+  return (
+    <div className="space-y-1.5 rounded-md border border-amber-400/30 bg-amber-500/5 px-3 py-2 text-xs">
+      <div className="flex items-center justify-between">
+        <span className="text-neutral-400">Reviewing</span>
+        <span className={`font-semibold ${classColor(playedClass)}`}>
+          {classLabel(playedClass)}
+          {lossCp !== undefined && lossCp > 0 && (
+            <span className="ml-1 text-neutral-400">(-{lossCp}cp)</span>
+          )}
+        </span>
+      </div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-neutral-400">You played</span>
+        <span className={`font-mono ${classColor(playedClass)}`}>{playedSan}</span>
+      </div>
+      {engineLine && (
+        <div>
+          <div className="text-neutral-400">Engine line</div>
+          <div className="mt-0.5 font-mono text-neutral-200">{engineLine}</div>
+        </div>
+      )}
+    </div>
   );
 }
 
