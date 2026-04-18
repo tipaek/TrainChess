@@ -7,8 +7,9 @@ import { SidePanel } from '@/components/SidePanel';
 import { EvalBar } from '@/components/EvalBar';
 import { classifyMove, hintMaxLoss, shouldRevert } from '@/lib/classify';
 import { isBookHistory } from '@/lib/openings';
-import { buildPgn, downloadPgn } from '@/lib/pgn';
+import { buildPgn } from '@/lib/pgn';
 import { createEngine, strengthForElo, type Engine } from '@/lib/engine';
+import type { ReviewLines } from '@/components/SidePanel';
 import type {
   Color,
   EnginePv,
@@ -175,6 +176,44 @@ function bestMoveArrow(fen: string, bestUci: string | null | undefined): Colored
     return { from: played.from, to: played.to, color: ARROW_BEST };
   } catch {
     return null;
+  }
+}
+
+/** Convert the first `max` UCI plies of a PV into SAN by replaying on
+ *  a scratch chess.js instance anchored at `fen`. */
+function pvToSan(fen: string, pv: string[] | undefined, max: number): string[] {
+  if (!pv || pv.length === 0) return [];
+  const scratch = new Chess(fen);
+  const sans: string[] = [];
+  for (let i = 0; i < Math.min(max, pv.length); i++) {
+    const uci = pv[i];
+    if (!uci || uci.length < 4) break;
+    const from = uci.slice(0, 2);
+    const to = uci.slice(2, 4);
+    const promotion = uci.length > 4 ? uci.slice(4, 5) : undefined;
+    try {
+      const played = scratch.move({ from, to, promotion });
+      if (!played) break;
+      sans.push(played.san);
+    } catch {
+      break;
+    }
+  }
+  return sans;
+}
+
+function bestMoveSan(fen: string, uci: string | null | undefined): string | undefined {
+  if (!uci || uci.length < 4) return undefined;
+  const scratch = new Chess(fen);
+  try {
+    const played = scratch.move({
+      from: uci.slice(0, 2),
+      to: uci.slice(2, 4),
+      promotion: uci.length > 4 ? uci.slice(4, 5) : undefined,
+    });
+    return played?.san;
+  } catch {
+    return undefined;
   }
 }
 
@@ -674,15 +713,73 @@ export default function Page() {
     }
     const result = gameResult !== '*' ? gameResult : '*';
     const pgn = buildPgn(snapshot, settings, result);
-    downloadPgn(pgn);
     try {
       await navigator.clipboard.writeText(pgn);
-      setExportToast('PGN copied + downloaded');
+      setExportToast('PGN copied');
     } catch {
-      setExportToast('PGN downloaded');
+      setExportToast('Copy failed');
     }
     setTimeout(() => setExportToast(null), TOAST_MS);
   }, [moves, settings, gameResult]);
+
+  const isUserMistake = useCallback(
+    (m: PlayedMove) =>
+      m.moverColor === settings.userColor &&
+      (m.moveClass === 'inaccuracy' ||
+        m.moveClass === 'mistake' ||
+        m.moveClass === 'blunder'),
+    [settings.userColor],
+  );
+
+  const hasMistakes = useMemo(() => moves.some(isUserMistake), [moves, isUserMistake]);
+
+  const goToPrevMistake = useCallback(() => {
+    // viewIndex is 1-based (ply count); null = live. Start one before the
+    // current position and walk backwards to find the most recent user mistake.
+    const start = (viewIndex ?? moves.length) - 1;
+    for (let i = start; i >= 1; i--) {
+      if (isUserMistake(moves[i - 1])) {
+        setViewIndex(i);
+        return;
+      }
+    }
+  }, [viewIndex, moves, isUserMistake]);
+
+  const goToNextMistake = useCallback(() => {
+    if (viewIndex === null) return;
+    for (let i = viewIndex + 1; i <= moves.length; i++) {
+      if (isUserMistake(moves[i - 1])) {
+        setViewIndex(i);
+        return;
+      }
+    }
+    // Nothing after the current position — drop back to live.
+    setViewIndex(null);
+  }, [viewIndex, moves, isUserMistake]);
+
+  const goLive = useCallback(() => setViewIndex(null), []);
+
+  const handleMoveClick = useCallback(
+    (ply: number) => {
+      if (ply >= moves.length) setViewIndex(null);
+      else setViewIndex(ply);
+    },
+    [moves.length],
+  );
+
+  const review = useMemo<ReviewLines | null>(() => {
+    if (viewIndex === null || viewIndex === 0) return null;
+    const m = moves[viewIndex - 1];
+    if (!m || !m.moveClass || m.moverColor !== settings.userColor) return null;
+    if (!m.analysis) return null;
+    return {
+      playedSan: m.san,
+      playedClass: m.moveClass,
+      lossCp: m.lossCp,
+      bestSan: bestMoveSan(m.fenBefore, m.analysis.bestMoveUci),
+      punishmentSan: pvToSan(m.fenAfter, m.analysis.punishmentPv, 5),
+    };
+  }, [viewIndex, moves, settings.userColor]);
 
   const reviewing = viewIndex !== null;
   const boardDisabled = phase !== 'userTurn' || reviewing;
@@ -774,6 +871,13 @@ export default function Page() {
       lastLossCp={lastLossCp}
       status={reviewing ? `Reviewing ply ${viewIndex} — → to return` : status}
       exportToast={exportToast}
+      viewIndex={viewIndex}
+      onMoveClick={handleMoveClick}
+      onPrevMistake={goToPrevMistake}
+      onNextMistake={goToNextMistake}
+      onReturnLive={goLive}
+      hasMistakes={hasMistakes}
+      review={review}
     />
   );
 
