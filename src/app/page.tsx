@@ -6,7 +6,7 @@ import { Board, type BoardOverlay, type BoardRef } from '@/components/Board';
 import { SidePanel } from '@/components/SidePanel';
 import { EvalBar } from '@/components/EvalBar';
 import { classifyMove, hintMaxLoss, shouldRevert } from '@/lib/classify';
-import { isBookHistory } from '@/lib/openings';
+import { isBookHistory, nextOpeningMove, OPENING_BY_ID } from '@/lib/openings';
 import { buildPgn } from '@/lib/pgn';
 import { createEngine, strengthForElo, type Engine } from '@/lib/engine';
 import type { ReviewLines } from '@/components/SidePanel';
@@ -39,6 +39,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   revertAt: 'inaccuracy',
   hintQuality: 'excellent',
   allowPremoves: false,
+  openingId: 'free',
 };
 
 function sideFromFen(fen: string): Color {
@@ -401,6 +402,45 @@ export default function Page() {
     const multipv = Math.min(6, inOpening ? Math.max(tier.multipv, 4) : tier.multipv);
     const randomCp = inOpening ? Math.max(tier.randomCp, 30) : tier.randomCp;
 
+    // Repertoire short-circuit: if the user picked an opening and the next
+    // book SAN is legal here, play it instead of asking Stockfish. Falls
+    // through to a normal search if the book has run out or the move turns
+    // out illegal in the current position.
+    const opening = OPENING_BY_ID[settings.openingId];
+    const forcedSan = nextOpeningMove(opening, chessRef.current.history());
+    if (forcedSan) {
+      const fenBeforeEngine = chessRef.current.fen();
+      let bookMove;
+      try {
+        bookMove = chessRef.current.move(forcedSan);
+      } catch {
+        bookMove = null;
+      }
+      if (bookMove) {
+        const fenAfterEngine = chessRef.current.fen();
+        const enginePlayed: PlayedMove = {
+          san: bookMove.san,
+          from: bookMove.from,
+          to: bookMove.to,
+          fenBefore: fenBeforeEngine,
+          fenAfter: fenAfterEngine,
+          moverColor: settings.userColor === 'w' ? 'b' : 'w',
+        };
+        // Brief pause so the move doesn't appear instantly.
+        await new Promise((r) => setTimeout(r, MIN_ENGINE_THINK_MS));
+        if (thisRun !== runIdRef.current) return;
+        setMoves((m) => [...m, enginePlayed]);
+        updateBoard();
+        setOverlay({ lastMove: { from: bookMove.from, to: bookMove.to } });
+        if (checkGameOver()) return;
+        setPhase('userTurn');
+        setStatus('Your move');
+        preEvalRef.current = null;
+        preAnalyzeUser();
+        return;
+      }
+    }
+
     const startedAt = Date.now();
     const pvs = await engine.analyzeMulti(fenSnapshot, {
       depth: tier.depth,
@@ -445,7 +485,7 @@ export default function Page() {
     setStatus('Your move');
     preEvalRef.current = null;
     preAnalyzeUser();
-  }, [settings.elo, updateBoard, preAnalyzeUser, checkGameOver]);
+  }, [settings.elo, settings.openingId, settings.userColor, updateBoard, preAnalyzeUser, checkGameOver]);
 
   const clearSelection = useCallback(() => {
     setOverlay((o) => ({ ...o, selected: undefined, legalDests: undefined }));

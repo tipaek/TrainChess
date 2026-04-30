@@ -9,6 +9,7 @@ import type {
   RevertThreshold,
 } from '@/lib/types';
 import { classColor, classLabel } from '@/lib/classify';
+import { OPENING_CHOICES } from '@/lib/openings';
 import { MoveList } from './MoveList';
 
 export interface ReviewLines {
@@ -154,6 +155,39 @@ export function SidePanel(props: SidePanelProps) {
 
         <LabeledBlock label="Premoves">
           <Toggle on={settings.allowPremoves} onChange={(v) => update('allowPremoves', v)} />
+        </LabeledBlock>
+
+        <LabeledBlock label="Opponent opening">
+          <select
+            value={settings.openingId}
+            onChange={(e) => update('openingId', e.target.value)}
+            className="w-full rounded-md border border-white/10 bg-panelAlt px-2 py-1.5 text-xs"
+          >
+            <optgroup label="Free choice">
+              {OPENING_CHOICES.filter((o) => o.group === 'free').map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Engine as White">
+              {OPENING_CHOICES.filter((o) => o.group === 'white').map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Engine as Black">
+              {OPENING_CHOICES.filter((o) => o.group === 'black').map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+          <p className="mt-1 text-[10px] leading-tight text-neutral-500">
+            Engine plays this line when the position fits, then continues normally.
+          </p>
         </LabeledBlock>
       </section>
 

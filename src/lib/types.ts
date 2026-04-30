@@ -63,6 +63,8 @@ export interface GameSettings {
   revertAt: RevertThreshold;
   hintQuality: HintQuality;
   allowPremoves: boolean;
+  /** ID into OPENING_CHOICES; 'free' = no forced repertoire. */
+  openingId: string;
 }
 
 export function toWhiteEval(e: EngineEval, sideToMove: Color): WhiteEval {

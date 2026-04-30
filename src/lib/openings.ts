@@ -291,6 +291,80 @@ function normalize(san: string): string {
 }
 
 /**
+ * User-selectable engine repertoire. Each entry is the SAN sequence the
+ * engine should try to steer into (alternating White/Black moves from the
+ * starting position). The orchestrator plays book[history.length] whenever
+ * the engine is to move and the played history is an exact prefix.
+ *
+ * `forSide` is informational only — it tells the UI which side this opening
+ * makes sense for so we can hint at the user when they pick a Black defense
+ * while playing Black themselves (the engine wouldn't get to play it).
+ */
+export interface OpeningChoice {
+  id: string;
+  name: string;
+  group: 'free' | 'white' | 'black';
+  /** SAN sequence from the starting position. Engine plays its plies; user
+   *  plies are required for the line to apply. */
+  moves: string[];
+}
+
+export const OPENING_CHOICES: OpeningChoice[] = [
+  { id: 'free', name: 'Free choice (no forcing)', group: 'free', moves: [] },
+
+  // ---- White first moves (engine as White, or just the first move) ----
+  { id: 'w-e4', name: '1. e4 (King’s Pawn)', group: 'white', moves: ['e4'] },
+  { id: 'w-d4', name: '1. d4 (Queen’s Pawn)', group: 'white', moves: ['d4'] },
+  { id: 'w-c4', name: '1. c4 (English)', group: 'white', moves: ['c4'] },
+  { id: 'w-nf3', name: '1. Nf3 (Réti)', group: 'white', moves: ['Nf3'] },
+  { id: 'w-b4', name: '1. b4 (Polish / Sokolsky)', group: 'white', moves: ['b4'] },
+  { id: 'w-b3', name: '1. b3 (Nimzo-Larsen)', group: 'white', moves: ['b3'] },
+  { id: 'w-f4', name: '1. f4 (Bird’s)', group: 'white', moves: ['f4'] },
+  { id: 'w-kg', name: 'King’s Gambit', group: 'white', moves: ['e4', 'e5', 'f4'] },
+
+  // ---- Black defenses (engine as Black) ----
+  // vs 1.e4
+  { id: 'b-sicilian', name: 'Sicilian (1…c5)', group: 'black', moves: ['e4', 'c5'] },
+  { id: 'b-french', name: 'French (1…e6)', group: 'black', moves: ['e4', 'e6'] },
+  { id: 'b-caro', name: 'Caro-Kann (1…c6)', group: 'black', moves: ['e4', 'c6'] },
+  { id: 'b-scandi', name: 'Scandinavian (1…d5)', group: 'black', moves: ['e4', 'd5'] },
+  { id: 'b-pirc', name: 'Pirc (1…d6)', group: 'black', moves: ['e4', 'd6'] },
+  { id: 'b-modern', name: 'Modern (1…g6)', group: 'black', moves: ['e4', 'g6'] },
+  { id: 'b-alekhine', name: 'Alekhine (1…Nf6)', group: 'black', moves: ['e4', 'Nf6'] },
+  { id: 'b-e5', name: 'Open Game (1…e5)', group: 'black', moves: ['e4', 'e5'] },
+  // vs 1.d4
+  { id: 'b-kid', name: 'King’s Indian (vs 1.d4)', group: 'black', moves: ['d4', 'Nf6', 'c4', 'g6'] },
+  { id: 'b-nimzo', name: 'Nimzo-Indian (vs 1.d4)', group: 'black', moves: ['d4', 'Nf6', 'c4', 'e6', 'Nc3', 'Bb4'] },
+  { id: 'b-grunfeld', name: 'Grünfeld (vs 1.d4)', group: 'black', moves: ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'd5'] },
+  { id: 'b-qid', name: 'Queen’s Indian (vs 1.d4)', group: 'black', moves: ['d4', 'Nf6', 'c4', 'e6', 'Nf3', 'b6'] },
+  { id: 'b-qgd', name: 'Queen’s Gambit Declined (vs 1.d4)', group: 'black', moves: ['d4', 'd5', 'c4', 'e6'] },
+  { id: 'b-slav', name: 'Slav (vs 1.d4)', group: 'black', moves: ['d4', 'd5', 'c4', 'c6'] },
+  { id: 'b-dutch', name: 'Dutch (1…f5 vs 1.d4)', group: 'black', moves: ['d4', 'f5'] },
+  { id: 'b-benko', name: 'Benko Gambit (vs 1.d4)', group: 'black', moves: ['d4', 'Nf6', 'c4', 'c5', 'd5', 'b5'] },
+  { id: 'b-polish-def', name: 'Polish Defense (1.d4 b5)', group: 'black', moves: ['d4', 'b5'] },
+];
+
+export const OPENING_BY_ID: Record<string, OpeningChoice> = Object.fromEntries(
+  OPENING_CHOICES.map((o) => [o.id, o]),
+);
+
+/**
+ * If the engine is to play next and `historySan` exactly matches the prefix
+ * of `opening.moves`, return the next forced SAN. Otherwise null.
+ */
+export function nextOpeningMove(
+  opening: OpeningChoice | undefined,
+  historySan: string[],
+): string | null {
+  if (!opening || opening.moves.length === 0) return null;
+  if (historySan.length >= opening.moves.length) return null;
+  for (let i = 0; i < historySan.length; i++) {
+    if (normalize(historySan[i]) !== normalize(opening.moves[i])) return null;
+  }
+  return opening.moves[historySan.length];
+}
+
+/**
  * Returns true if `history` (full SAN list from start) is a prefix of any known
  * opening line. Always true for the empty position.
  */
