@@ -160,7 +160,17 @@ export function SidePanel(props: SidePanelProps) {
         <LabeledBlock label="Opponent opening">
           <select
             value={settings.openingId}
-            onChange={(e) => update('openingId', e.target.value)}
+            onChange={(e) => {
+              const id = e.target.value;
+              const choice = OPENING_CHOICES.find((o) => o.id === id);
+              // Flip the user to the opposite color so the chosen line
+              // actually applies — "Engine as Black" means the engine
+              // plays Black, so the user must be White.
+              const next: GameSettings = { ...settings, openingId: id };
+              if (choice?.group === 'white') next.userColor = 'b';
+              else if (choice?.group === 'black') next.userColor = 'w';
+              onSettingsChange(next);
+            }}
             className="w-full rounded-md border border-white/10 bg-panelAlt px-2 py-1.5 text-xs"
           >
             <optgroup label="Free choice">
