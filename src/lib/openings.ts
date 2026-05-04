@@ -121,6 +121,19 @@ const LINES: string[][] = [
   ['d4', 'f5', 'g3', 'Nf6', 'Bg2', 'g6'], // Leningrad
   ['d4', 'f5', 'c4', 'Nf6', 'Nc3', 'e6'], // Classical Dutch
 
+  // --- 1.d4 b5 (Polish Defense) ---
+  ['d4', 'b5'],
+  ['d4', 'b5', 'e4'],
+  ['d4', 'b5', 'e4', 'Bb7'],
+  ['d4', 'b5', 'e4', 'a6'],
+  ['d4', 'b5', 'a4'],
+  ['d4', 'b5', 'a4', 'Bb7'],
+  ['d4', 'b5', 'a4', 'c6'],
+  ['d4', 'b5', 'Nf3'],
+  ['d4', 'b5', 'Nf3', 'Bb7'],
+  ['d4', 'b5', 'c4'],
+  ['d4', 'b5', 'c4', 'bxc4'],
+
   // --- 1.c4 (English) ---
   ['c4', 'e5', 'Nc3', 'Nf6', 'Nf3', 'Nc6'], // Reversed Sicilian
   ['c4', 'Nf6', 'Nc3', 'e6'],
